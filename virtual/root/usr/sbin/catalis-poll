@@ -66,7 +66,7 @@ def init_db(hmid:str) -> apsw.Connection:
 		
 		# create db subdirectory
 		subdir = "current"
-		sh.run(f"mkdir -p {CFG.MOUNTPOINT}/{subdir}")
+		sh.run(f"mkdir -p {CFG.MOUNTPOINT}/{subdir}", shell=True)
 
 		dbpath = f"{CFG.MOUNTPOINT}/{subdir}/polldata-hmi{hmid}.sqlite3"
 		exists = int(sh.getoutput(f"test -f {dbpath} && echo 1 || echo 0"))
