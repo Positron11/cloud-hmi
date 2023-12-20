@@ -30,7 +30,7 @@ CFG = Struct(**os.environ)
 
 
 # set logfile
-logfile = f"/var/log/catalis/poll-{strftime('%d%m%Y-%H%M', gmtime())}.log"
+logfile = f"/var/log/catalis/poll-{strftime('%d%m%Y-%H%M%S', gmtime())}.log"
 
 
 # get filesytem label and device id
