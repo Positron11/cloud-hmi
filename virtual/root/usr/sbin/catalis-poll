@@ -168,7 +168,7 @@ def exit_clean(signum:int, frame:FrameType) -> None:
 
 # custom clean exit handler
 def exit_ferror() -> None:
-	sh.run(f"echo 'Daemon exiting with fatal error. Check logs.'", shell=True) # write to journalctl log
+	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logfile}'", shell=True) # write to journalctl log
 	log(f"Terminating due to fatal error.", level=6)
 	exit(1) # exit with error
 
