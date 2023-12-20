@@ -31,7 +31,7 @@ CFG = Struct(**os.environ)
 
 # set logfile
 logfile = f"/var/log/catalis/poll.log" # static logfile name: CHANGE IN PROD!! [warn]
-# logfile = f"poll-{strftime("%d%m%Y-%H%M", gmtime())}.log"
+# logfile = f"poll-{strftime('%d%m%Y-%H%M', gmtime())}.log"
 
 with open(logfile, "w") as f: pass # reset logfile: REMOVE IN PROD!! [warn]
 
@@ -129,7 +129,7 @@ def daemon() -> None:
 
 	# initial information
 	log(f"Welcome to the Catalis Cloud HMI Poller Daemon", level=6)
-	log(f"Session date: {strftime("%F", gmtime())} (GMT)", level=6)
+	log(f"Session date: {strftime('%F', gmtime())} (GMT)", level=6)
 	log(f"Filesystem label: {fs_label}", level=6)
 	log(f"Mount point: {CFG.MOUNTPOINT}", level=6)
 
