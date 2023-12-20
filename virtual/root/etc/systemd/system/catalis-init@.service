@@ -1,0 +1,14 @@
+[Unit]
+Description=Catalis Cloud HMI init service
+BindsTo=catalis-chmi@%i.service
+Before=catalis-chmi@%i.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/catalis/global.conf
+ExecStart=/usr/sbin/catalis-init %i $MOUNTPOINT
+ExecStop=/usr/sbin/catalis-cleanup $MOUNTPOINT
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# start polling service
+/bin/systemctl start catalis-poll@$1.service
+echo "(main) [1/1] Started polling daemon"

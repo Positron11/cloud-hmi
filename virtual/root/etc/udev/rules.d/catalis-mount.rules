@@ -1,0 +1,2 @@
+ACTION=="add", KERNEL=="sd*", ENV{ID_FS_LABEL}=="DATA-HMI[0-9][0-9][0-9]", TAG+="systemd", ENV{SYSTEMD_WANTS}="catalis-chmi@%k.service"
+ACTION=="remove", KERNEL=="sd*", ENV{ID_FS_LABEL}=="DATA-HMI[0-9][0-9][0-9]", TAG+="systemd", RUN+="/bin/systemctl stop catalis-chmi@%k.service"

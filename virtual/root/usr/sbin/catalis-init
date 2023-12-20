@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# create mountpoint
+mkdir -p $2
+echo "(init) [1/2] Created mountpoint at $2"
+
+# start mounting service
+/bin/systemctl start catalis-mount@$1.service
+echo "(init) [2/2] Started mount service for /dev/$1"

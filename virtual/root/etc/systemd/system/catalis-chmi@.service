@@ -1,0 +1,12 @@
+[Unit]
+Description=Catalis Cloud HMI main service
+Requires=catalis-init@%i.service
+After=catalis-init@%i.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/catalis-main %i
+
+[Install]
+WantedBy=multi-user.target

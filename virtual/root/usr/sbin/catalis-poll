@@ -1,0 +1,175 @@
+#!/home/aarush/Documents/Projects/CloudHMI/virtual/bin/python
+
+import os
+import sys
+import json
+import signal
+import subprocess as sh
+from types import FrameType
+from time import sleep, strftime, gmtime
+import apsw, apsw.bestpractice
+
+
+# initialize apsw
+apsw.bestpractice.apply((
+	# apsw.bestpractice.connection_wal,
+	apsw.bestpractice.connection_busy_timeout,
+	apsw.bestpractice.connection_enable_foreign_keys,
+	apsw.bestpractice.connection_dqs,
+	# apsw.bestpractice.library_logging
+))
+
+
+# structure class for dict -> obj
+class Struct:
+	def __init__(self, **entries):
+		self.__dict__.update(entries)
+
+# create config object
+CFG = Struct(**os.environ)
+
+
+# set logfile
+logfile = f"/var/log/catalis/poll.log" # static logfile name: CHANGE IN PROD!! [warn]
+# logfile = f"poll-{strftime("%d%m%Y-%H%M", gmtime())}.log"
+
+with open(logfile, "w") as f: pass # reset logfile: REMOVE IN PROD!! [warn]
+
+# get filesytem label and device id
+fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
+hmid = fs_label.strip(CFG.LABEL_PREFIX)
+
+
+# write to shell/log
+def log(string:str, level:int=3, endline:bool=True) -> None:
+	levels = [
+		"[fatal] ", "[error] ", "[warn] ", 
+		"[info] ", "[debug] ", "[trace] ", ""
+	]
+
+	with open(logfile, "a+") as f:
+		# get last char (if possible) to check if newline
+		try: f.seek(f.tell() - 1, os.SEEK_SET)
+		except: pass
+
+		# prepend timestamp and level if last char newline (ie. this is a new entry)
+		if f.read(1) in ["\n", ""]: out = f"""{strftime("%T", gmtime())} | {levels[level]}{string}"""
+		else: out = f"""{string}"""
+		
+		# append newline if endline
+		print(out, end="\n" if endline else "", file=f)
+
+
+# initialize database
+def init_db(hmid:str) -> apsw.Connection:
+	try: 
+		# try to connect to database
+		log("Init (1/2): Connecting to database... ", endline=False)
+		
+		dbpath = f"{CFG.MOUNTPOINT}/polldata-hmi{hmid}.sqlite3"
+		exists = int(sh.getoutput(f"test -f {dbpath} && echo 1 || echo 0"))
+		connection = apsw.Connection(dbpath)
+		
+		log(f"{'connected to' if exists else 'created'} {dbpath}.")
+
+		# try to initialize database
+		log("Init (2/2): Initializing database... ", endline=False)
+		
+		connection.execute("DROP TABLE IF EXISTS polls;") # reset polls table: REMOVE IN PROD!! [warn]
+		
+		connection.execute("""CREATE TABLE IF NOT EXISTS polls(
+					 id INTEGER PRIMARY KEY,
+					 timestamp TEXT NOT NULL UNIQUE,
+					 type TEXT NOT NULL,
+					 data TEXT NOT NULL
+		);""")
+		
+		log("done.")
+	
+	except:	# failed to initialize database
+		log("error.")
+		log(("Unable to open/create database file: check mountpoint exists + "
+	   		 "permissions (Sugg. fixes: Check mountpoint defined in "
+			 "/etc/catalis/global.conf and consult with your system "
+			 "administrator)."), level=0)
+		exit_ferror()
+
+	return connection
+
+
+# write poll data to database
+def write_db(db:apsw.Connection, type:str, data:str) -> None:
+	log(f"Writing to database... ", endline=False)
+
+	try:
+		timestamp = strftime("%s", gmtime())
+		db.execute("INSERT INTO polls(timestamp, type, data) VALUES(?,?,?);", (timestamp, type, data))
+		log("written.")
+
+	# failed to write to database
+	except:
+		log("error.")
+		log(f"Failed while writing to database: ", level=0, endline=False)
+		
+		try: # check if can open db, if yes assume permissions error
+			test = apsw.Connection(f"{CFG.MOUNTPOINT}/polldata-hmi{hmid}.sqlite3", flags=apsw.SQLITE_OPEN_READWRITE)
+			log("check mounted filesytem permissions ", endline=0)
+			
+		except: # otherwise, assume database deleted
+			log("ensure local DB has not been deleted ", endline=0)
+
+		log("(Sugg. fixes: Try re-inserting the storage volume).")
+		exit_ferror()
+
+
+# daemon
+def daemon() -> None:
+	# write to journalctl log
+	sh.run(f"echo 'Daemon started. Logging to {logfile}.'", shell=True)
+
+	# initial information
+	log(f"Welcome to the Catalis Cloud HMI Poller Daemon", level=6)
+	log(f"Session date: {strftime("%F", gmtime())} (GMT)", level=6)
+	log(f"Filesystem label: {fs_label}", level=6)
+	log(f"Mount point: {CFG.MOUNTPOINT}", level=6)
+
+	# initialize + get database connection
+	db = init_db(hmid)
+
+	# main loop
+	while True:
+		write_db(db, "error", json.dumps({
+			"addr1": {
+				"name": "film error",
+				"code": "132"
+			},
+			"addr2": {
+				"name": "pump error",
+				"code": "190"
+			} # ...and so on
+		}))
+
+		# sleep for duration defined in config
+		sleep(int(CFG.POLL_INTERVAL))
+
+
+# custom clean exit handler
+def exit_clean(signum:int, frame:FrameType) -> None:
+	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
+	log(f"Terminating daemon cleanly.", level=6)
+	exit(0) # exit with success
+
+
+# custom clean exit handler
+def exit_ferror() -> None:
+	sh.run(f"echo 'Daemon exiting with fatal error. Check logs.'", shell=True) # write to journalctl log
+	log(f"Terminating due to fatal error.", level=6)
+	exit(1) # exit with error
+
+
+# register custom standard termination exit handler
+signal.signal(signal.SIGTERM, exit_clean)
+
+# driver
+if __name__ == "__main__":
+	daemon()
