@@ -64,7 +64,7 @@ def init_db(hmid:str) -> apsw.Connection:
 		# try to connect to database
 		log("Init (1/2): Connecting to database... ", endline=False)
 		
-		dbpath = f"{CFG.MOUNTPOINT}/polldata-hmi{hmid}.sqlite3"
+		dbpath = f"{CFG.MOUNTPOINT}/current/polldata-hmi{hmid}.sqlite3"
 		exists = int(sh.getoutput(f"test -f {dbpath} && echo 1 || echo 0"))
 		connection = apsw.Connection(dbpath)
 		
