@@ -38,9 +38,9 @@ fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
 hmid = fs_label.strip(CFG.LABEL_PREFIX)
 
 
-# write to shell/log
+# write to log
 def log(string:str, level:int=3, endline:bool=True) -> None:
-	levels = [
+	levels = [ # log entry level labels
 		"[fatal] ", "[error] ", "[warn] ", 
 		"[info] ", "[debug] ", "[trace] ", ""
 	]
@@ -54,7 +54,7 @@ def log(string:str, level:int=3, endline:bool=True) -> None:
 		if f.read(1) in ["\n", ""]: out = f"""{strftime("%T", gmtime())} | {levels[level]}{string}"""
 		else: out = f"""{string}"""
 		
-		# append newline if endline
+		# append newline if log entry is completed
 		print(out, end="\n" if endline else "", file=f)
 
 
@@ -86,12 +86,13 @@ def init_db(hmid:str) -> apsw.Connection:
 		
 		log("done.")
 	
-	except:	# failed to initialize database
+	except Exception as e:	# failed to initialize database
 		log("error.")
 		log(("Unable to open/create database file: check mountpoint exists + "
 	   		 "permissions (Sugg. fixes: Check mountpoint defined in "
 			 "/etc/catalis/global.conf and consult with your system "
 			 "administrator)."), level=0)
+		log(e, level=5)
 		exit_ferror()
 
 	return connection
@@ -107,7 +108,9 @@ def write_db(db:apsw.Connection, type:str, data:str) -> None:
 		log("written.")
 
 	# failed to write to database
-	except:
+	except Exception as e0:
+		e = e0 # set exception to general exception
+
 		log("error.")
 		log(f"Failed while writing to database: ", level=0, endline=False)
 		
@@ -115,10 +118,13 @@ def write_db(db:apsw.Connection, type:str, data:str) -> None:
 			test = apsw.Connection(f"{CFG.MOUNTPOINT}/polldata-hmi{hmid}.sqlite3", flags=apsw.SQLITE_OPEN_READWRITE)
 			log("check mounted filesytem permissions ", endline=0)
 			
-		except: # otherwise, assume database deleted
+		except Exception as e1: # otherwise, assume database deleted
+			e = e1 # make exception more specific
+
 			log("ensure local DB has not been deleted ", endline=0)
 
 		log("(Sugg. fixes: Try re-inserting the storage volume).")
+		log(e, level=5)
 		exit_ferror()
 
 
