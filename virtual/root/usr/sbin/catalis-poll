@@ -1,4 +1,4 @@
-#!/home/aarush/Documents/Projects/CloudHMI/virtual/bin/python
+#!/bin/python
 
 # ======================================================= IMPORTS & MODULE SETUP
 
@@ -109,7 +109,7 @@ def init_db(hmid:str) -> apsw.Connection:
 			 "/etc/catalis/global.conf and consult with your system "
 			 "administrator)."), level=0)
 		log(e, level=5)
-		exit_ferror()
+		exit_fatal()
 
 	return connection
 
@@ -141,7 +141,7 @@ def write_db(db:apsw.Connection, type:str, data:str) -> None:
 
 		log("(Sugg. fixes: Try re-inserting the storage volume).")
 		log(e, level=5)
-		exit_ferror()
+		exit_fatal()
 
 
 # ================================================================== MAIN DAEMON
@@ -169,7 +169,7 @@ def daemon() -> None:
 	except Exception as e:
 		log("Unable to initialize MODBUS TCP connection (Sugg. fixes: Consult with system administrator).", level=0)
 		log(e, level=5)
-		exit_ferror()
+		exit_fatal()
 
 	pdef = {
 		"type": "report",
@@ -181,6 +181,7 @@ def daemon() -> None:
 	while True:
 		log(f"Poll #{pc} (1/2): Polling HMI registers... ", endline=False)
 
+		# polling loop
 		while True:
 			try: 
 				data = {str(addr):client.read_holding_registers(addr)[0] for addr in pdef["addresses"]}
@@ -208,14 +209,17 @@ def daemon() -> None:
 def exit_clean(signum:int, frame:FrameType) -> None:
 	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
 	log(f"Terminating daemon cleanly.", level=6, newline=True)
-	exit(0) # exit with success
+	
+	# Raise SIGTERM again to trigger the default handler
+	signal.signal(signal.SIGTERM, signal.SIG_DFL)
+	os.kill(os.getpid(), signal.SIGTERM)
 
 
-# custom clean exit handler
-def exit_ferror() -> None:
+# custom error exit handler
+def exit_fatal() -> None:
 	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logfile}'", shell=True) # write to journalctl log
 	log(f"Terminating due to fatal error.", level=6, newline=True)
-	exit(1) # exit with error
+	sys.exit(1) # exit with error
 
 
 # ================================================================== DRIVER CODE
