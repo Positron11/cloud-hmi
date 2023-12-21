@@ -171,26 +171,28 @@ def daemon() -> None:
 		log(e, level=5)
 		exit_ferror()
 
+	pdef = {
+		"type": "report",
+		"addresses": [2000, 2001, 2002]
+	}
+
 	# main loop
 	pc = 1
 	while True:
 		log(f"Poll #{pc} (1/2): Polling HMI registers... ", endline=False)
 
-		retried = False
 		while True:
-			data = client.read_holding_registers(2000, 1)
-			
-			if data: 
+			try: 
+				data = {str(addr):client.read_holding_registers(addr)[0] for addr in pdef["addresses"]}
 				log("recieved.")
-				packet = {"addr2000": data[0]}
 
 				log(f"Poll #{pc} (2/2): ", endline=False)
-				write_db(db, "generic", json.dumps(packet))
+				write_db(db, pdef["type"], json.dumps(data))
 
 				pc += 1
 				break
 			
-			else: 
+			except: 
 				log("error.")
 				log(f"No data received from link. Retrying in {CFG.RETRY_INTERVAL}s...", level=1, endline=False)
 
