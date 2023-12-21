@@ -7,16 +7,15 @@ import signal
 import subprocess as sh
 from types import FrameType
 from time import sleep, strftime, gmtime
+from pyModbusTCP.client import ModbusClient
 import apsw, apsw.bestpractice
 
 
 # initialize apsw
 apsw.bestpractice.apply((
-	# apsw.bestpractice.connection_wal,
 	apsw.bestpractice.connection_busy_timeout,
 	apsw.bestpractice.connection_enable_foreign_keys,
-	apsw.bestpractice.connection_dqs,
-	# apsw.bestpractice.library_logging
+	apsw.bestpractice.connection_dqs
 ))
 
 
@@ -39,22 +38,27 @@ hmid = fs_label.strip(CFG.LABEL_PREFIX)
 
 
 # write to log
-def log(string:str, level:int=3, endline:bool=True) -> None:
+def log(string:str, level:int=3, newline=False, endline:bool=True) -> None:
 	levels = [ # log entry level labels
 		"[fatal] ", "[error] ", "[warn] ", 
 		"[info] ", "[debug] ", "[trace] ", ""
 	]
 
 	with open(logfile, "a+") as f:
-		# get last char (if possible) to check if newline
-		try: f.seek(f.tell() - 1, os.SEEK_SET)
-		except: pass
+		# get last char (if possible) to check if previous entry terminated
+		try: 
+			f.seek(f.tell() - 1, os.SEEK_SET)
+			prevterm = f.read(1) in ["\n", ""]
+		
+		except: # beginning of file 
+			prevterm = True
 
 		# prepend timestamp and level if last char newline (ie. this is a new entry)
-		if f.read(1) in ["\n", ""]: out = f"""{strftime("%T", gmtime())} | {levels[level]}{string}"""
+		if newline or prevterm: out = f"""{strftime("%T", gmtime())} | {levels[level]}{string}"""
 		else: out = f"""{string}"""
 		
-		# append newline if log entry is completed
+		# append newline if log entry is completed, prepend if specified
+		if newline and not prevterm: out = "\n" + out
 		print(out, end="\n" if endline else "", file=f)
 
 
@@ -138,38 +142,59 @@ def daemon() -> None:
 	log(f"Session date: {strftime('%F', gmtime())} (GMT)", level=6)
 	log(f"Filesystem label: {fs_label}", level=6)
 	log(f"Mount point: {CFG.MOUNTPOINT}", level=6)
+	log(f"HMI TCP/IP host addr.: {CFG.MOUNTPOINT}", level=6)
 
 	# initialize + get database connection
 	db = init_db(hmid)
 
-	# main loop
-	while True:
-		write_db(db, "error", json.dumps({
-			"addr1": {
-				"name": "film error",
-				"code": "132"
-			},
-			"addr2": {
-				"name": "pump error",
-				"code": "190"
-			} # ...and so on
-		}))
+	# initialize TCP connection
+	try:
+		client = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLL_INTERVAL)
+	
+	except Exception as e:
+		log("Unable to initialize MODBUS TCP connection (Sugg. fixes: Consult with system administrator).", level=0)
+		log(e, level=5)
+		exit_ferror()
 
-		# sleep for duration defined in config
+	# main loop
+	pc = 1
+	while True:
+		log(f"Poll #{pc} (1/2): Polling HMI registers... ", endline=False)
+
+		retried = False
+		while True:
+			data = client.read_holding_registers(2000, 1)
+			
+			if data: 
+				log("recieved.")
+				packet = {"addr2000": data[0]}
+
+				log(f"Poll #{pc} (2/2): ", endline=False)
+				write_db(db, "generic", json.dumps(packet))
+
+				pc += 1
+				break
+			
+			else: 
+				log("error.")
+				log(f"No data received from link. Retrying in {CFG.RETRY_INTERVAL}s...", level=1, endline=False)
+
+			sleep(int(CFG.RETRY_INTERVAL))
+
 		sleep(int(CFG.POLL_INTERVAL))
 
 
 # custom clean exit handler
 def exit_clean(signum:int, frame:FrameType) -> None:
 	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
-	log(f"Terminating daemon cleanly.", level=6)
+	log(f"Terminating daemon cleanly.", level=6, newline=True)
 	exit(0) # exit with success
 
 
 # custom clean exit handler
 def exit_ferror() -> None:
 	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logfile}'", shell=True) # write to journalctl log
-	log(f"Terminating due to fatal error.", level=6)
+	log(f"Terminating due to fatal error.", level=6, newline=True)
 	exit(1) # exit with error
 
 
