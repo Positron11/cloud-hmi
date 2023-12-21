@@ -5,14 +5,15 @@
 
 import os
 import sys
-import json
 import signal
 import subprocess as sh
 from types import FrameType
-from time import sleep, strftime, gmtime
-from pyModbusTCP.client import ModbusClient
-import apsw, apsw.bestpractice
 from functools import partial
+
+import json
+from time import sleep, strftime, gmtime
+import apsw, apsw.bestpractice
+from pyModbusTCP.client import ModbusClient
 
 
 # initialize apsw
