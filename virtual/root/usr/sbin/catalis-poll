@@ -12,6 +12,7 @@ from types import FrameType
 from time import sleep, strftime, gmtime
 from pyModbusTCP.client import ModbusClient
 import apsw, apsw.bestpractice
+from functools import partial
 
 
 # initialize apsw
@@ -46,39 +47,58 @@ hmid = fs_label.strip(CFG.LABEL_PREFIX)
 # ====================================================================== LOGGING
 
 
-# write to log
-def log(string:str, level:int=3, newline=False, endline:bool=True) -> None:
+class Logger:
 	levels = [ # log entry level labels
 		"[fatal] ", "[error] ", "[warn] ", 
 		"[info] ", "[debug] ", "[trace] ", ""
 	]
 
-	with open(logfile, "a+") as f:
+
+	# constructor
+	def __init__(self, logfile:str):
+		self.logfile = open(logfile, "a+")
+
+
+	# logging function
+	def log(self, string:str, level:int=3, newline=False, endline:bool=True) -> None:
 		# get last char (if possible) to check if previous entry terminated
 		try: 
-			f.seek(f.tell() - 1, os.SEEK_SET)
-			prevterm = f.read(1) in ["\n", ""]
+			self.logfile.seek(self.logfile.tell() - 1, os.SEEK_SET)
+			prevterm = self.logfile.read(1) in ["\n", ""]
 		
 		except: # beginning of file 
 			prevterm = True
 
 		# prepend timestamp and level if last char newline (ie. this is a new entry)
-		if newline or prevterm: out = f"""{strftime("%T", gmtime())} | {levels[level]}{string}"""
+		if newline or prevterm: out = f"""{strftime("%T", gmtime())} | {self.levels[level]}{string}"""
 		else: out = f"""{string}"""
 		
 		# append newline if log entry is completed, prepend if specified
 		if newline and not prevterm: out = "\n" + out
-		print(out, end="\n" if endline else "", file=f)
+		print(out, end="\n" if endline else "", file=self.logfile)
 
+
+	# close logfile
+	def close(self) -> None:
+		self.logfile.close()
+
+
+# ================================================================= DATA PACKETS
+
+# data packet definition class
+class PacketDefinition:
+	def __init__(self, type:str, addresses:list):
+		self.type = type
+		self.addresses = addresses
 
 # ========================================================== DATABASE OPERATIONS
 
 
 # initialize database
-def init_db(hmid:str) -> apsw.Connection:
+def init_db(hmid:str, logger:Logger) -> apsw.Connection:
 	try: 
 		# try to connect to database
-		log("Init (1/2): Connecting to database... ", endline=False)
+		logger.log("Init (1/2): Connecting to database... ", endline=False)
 		
 		# create db subdirectory
 		subdir = "current"
@@ -88,10 +108,10 @@ def init_db(hmid:str) -> apsw.Connection:
 		exists = int(sh.getoutput(f"test -f {dbpath} && echo 1 || echo 0"))
 		connection = apsw.Connection(dbpath)
 		
-		log(f"{'connected to' if exists else 'created'} {dbpath}.")
+		logger.log(f"{'connected to' if exists else 'created'} {dbpath}.")
 
 		# try to initialize database
-		log("Init (2/2): Initializing database... ", endline=False)
+		logger.log("Init (2/2): Initializing database... ", endline=False)
 		
 		connection.execute("""CREATE TABLE IF NOT EXISTS polls(
 					 id INTEGER PRIMARY KEY,
@@ -100,48 +120,72 @@ def init_db(hmid:str) -> apsw.Connection:
 					 data TEXT NOT NULL
 		);""")
 		
-		log("done.")
+		logger.log("done.")
 	
 	except Exception as e:	# failed to initialize database
-		log("error.")
-		log(("Unable to open/create database file: check mountpoint exists + "
+		logger.log("error.")
+		logger.log(("Unable to open/create database file: check mountpoint exists + "
 	   		 "permissions (Sugg. fixes: Check mountpoint defined in "
 			 "/etc/catalis/global.conf and consult with your system "
 			 "administrator)."), level=0)
-		log(e, level=5)
-		exit_fatal()
+		logger.log(e, level=5)
+		
+		exit_fatal(logger)
 
 	return connection
 
 
 # write poll data to database
-def write_db(db:apsw.Connection, type:str, data:str) -> None:
-	log(f"Writing to database... ", endline=False)
+def write_db(db:apsw.Connection, type:str, data:str, logger:Logger) -> None:
+	logger.log(f"Writing to database... ", endline=False)
 
 	try:
 		timestamp = strftime("%s", gmtime())
 		db.execute("INSERT INTO polls(timestamp, type, data) VALUES(?,?,?);", (timestamp, type, data))
-		log("written.")
+		logger.log("written.")
 
 	# failed to write to database
 	except Exception as e0:
 		e = e0 # set exception to general exception
 
-		log("error.")
-		log(f"Failed while writing to database: ", level=0, endline=False)
+		logger.log("error.")
+		logger.log(f"Failed while writing to database: ", level=0, endline=False)
 		
 		try: # check if can open db, if yes assume permissions error
 			test = apsw.Connection(f"{CFG.MOUNTPOINT}/polldata-hmi{hmid}.sqlite3", flags=apsw.SQLITE_OPEN_READWRITE)
-			log("check mounted filesytem permissions ", endline=0)
+			logger.log("check mounted filesytem permissions ", endline=0)
 			
 		except Exception as e1: # otherwise, assume database deleted
 			e = e1 # make exception more specific
 
-			log("ensure local DB has not been deleted ", endline=0)
+			logger.log("ensure local DB has not been deleted ", endline=0)
 
-		log("(Sugg. fixes: Try re-inserting the storage volume).")
-		log(e, level=5)
-		exit_fatal()
+		logger.log("(Sugg. fixes: Try re-inserting the storage volume).")
+		logger.log(e, level=5)
+		
+		exit_fatal(logger)
+
+
+# ====================================================================== POLLING
+
+
+def poll(client:ModbusClient, addresses:list, logger:Logger) -> dict:
+	logger.log(f"Polling HMI registers... ", endline=False)
+
+	# try until successful
+	while True:
+		try: 
+			data = {str(addr):client.read_holding_registers(addr)[0] for addr in addresses}
+			logger.log("recieved.")
+			break
+		
+		except: 
+			logger.log("error.")
+			logger.log(f"No data received from link. Retrying in {CFG.RETRY_INTERVAL}s...", level=1, endline=False)
+
+		sleep(int(CFG.RETRY_INTERVAL))
+
+	return data
 
 
 # ================================================================== MAIN DAEMON
@@ -149,56 +193,49 @@ def write_db(db:apsw.Connection, type:str, data:str) -> None:
 
 # daemon
 def daemon() -> None:
+	# initialize logger
+	logger = Logger(logfile)
+
+	# register custom standard termination exit handler
+	signal.signal(signal.SIGTERM, partial(exit_clean, logger))
+
 	# write to journalctl log
 	sh.run(f"echo 'Daemon started. Logging to {logfile}.'", shell=True)
 
 	# initial information
-	log(f"Welcome to the Catalis Cloud HMI Poller Daemon", level=6)
-	log(f"Session date: {strftime('%F', gmtime())} (GMT)", level=6)
-	log(f"Filesystem label: {fs_label}", level=6)
-	log(f"Mount point: {CFG.MOUNTPOINT}", level=6)
-	log(f"HMI TCP/IP host addr.: {CFG.MOUNTPOINT}", level=6)
+	logger.log(f"Welcome to the Catalis Cloud HMI Poller Daemon", level=6)
+	logger.log(f"Session date: {strftime('%F', gmtime())} (GMT)", level=6)
+	logger.log(f"Filesystem label: {fs_label}", level=6)
+	logger.log(f"Mount point: {CFG.MOUNTPOINT}", level=6)
+	logger.log(f"HMI TCP/IP host addr.: {CFG.MOUNTPOINT}", level=6)
 
 	# initialize + get database connection
-	db = init_db(hmid)
+	db = init_db(logger=logger, hmid=hmid)
 
 	# initialize TCP connection
 	try:
-		client = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLL_INTERVAL)
-	
-	except Exception as e:
-		log("Unable to initialize MODBUS TCP connection (Sugg. fixes: Consult with system administrator).", level=0)
-		log(e, level=5)
-		exit_fatal()
+		hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLL_INTERVAL)
 
-	pdef = {
-		"type": "report",
-		"addresses": [2000, 2001, 2002]
-	}
+	except Exception as e:
+		logger.log("Unable to initialize MODBUS TCP connection (Sugg. fixes: Consult with system administrator).", level=0)
+		logger.log(e, level=5)
+		
+		exit_fatal(logger)
+
+	pdef = PacketDefinition(type="report", addresses=[0, 1, 2])
 
 	# main loop
 	pc = 1
 	while True:
-		log(f"Poll #{pc} (1/2): Polling HMI registers... ", endline=False)
+		# poll for data
+		logger.log(f"Poll #{pc} (1/2): ", endline=False)
+		data = poll(hmi, addresses=pdef.addresses, logger=logger)
 
-		# polling loop
-		while True:
-			try: 
-				data = {str(addr):client.read_holding_registers(addr)[0] for addr in pdef["addresses"]}
-				log("recieved.")
-
-				log(f"Poll #{pc} (2/2): ", endline=False)
-				write_db(db, pdef["type"], json.dumps(data))
-
-				pc += 1
-				break
-			
-			except: 
-				log("error.")
-				log(f"No data received from link. Retrying in {CFG.RETRY_INTERVAL}s...", level=1, endline=False)
-
-			sleep(int(CFG.RETRY_INTERVAL))
-
+		# write data to db
+		logger.log(f"Poll #{pc} (2/2): ", endline=False)
+		write_db(db=db, type=pdef.type, data=json.dumps(data), logger=logger)
+		
+		pc += 1
 		sleep(int(CFG.POLL_INTERVAL))
 
 
@@ -206,27 +243,27 @@ def daemon() -> None:
 
 
 # custom clean exit handler
-def exit_clean(signum:int, frame:FrameType) -> None:
+def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
 	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
-	log(f"Terminating daemon cleanly.", level=6, newline=True)
 	
-	# Raise SIGTERM again to trigger the default handler
-	signal.signal(signal.SIGTERM, signal.SIG_DFL)
-	os.kill(os.getpid(), signal.SIGTERM)
+	logger.log(f"Terminating daemon cleanly.", level=6, newline=True)
+	logger.close()
+	
+	sys.exit(0)
 
 
 # custom error exit handler
-def exit_fatal() -> None:
+def exit_fatal(logger:Logger) -> None:
 	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logfile}'", shell=True) # write to journalctl log
-	log(f"Terminating due to fatal error.", level=6, newline=True)
-	sys.exit(1) # exit with error
+	
+	logger.log(f"Terminating due to fatal error.", level=6, newline=True)
+	logger.close()
+
+	sys.exit(1)
 
 
 # ================================================================== DRIVER CODE
 
-
-# register custom standard termination exit handler
-signal.signal(signal.SIGTERM, exit_clean)
 
 # driver
 if __name__ == "__main__":
