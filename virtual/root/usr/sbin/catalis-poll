@@ -242,6 +242,12 @@ def daemon() -> None:
 # ================================================================ EXIT HANDLERS
 
 
+# Raise SIGTERM again to trigger the default handler
+def default_sigterm_handler():
+	signal.signal(signal.SIGTERM, signal.SIG_DFL)
+	os.kill(os.getpid(), signal.SIGTERM)
+
+
 # custom clean exit handler
 def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
 	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
@@ -249,7 +255,7 @@ def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
 	logger.log(f"Terminating daemon cleanly.", level=6, newline=True)
 	logger.close()
 	
-	sys.exit(0)
+	default_sigterm_handler()
 
 
 # custom error exit handler
@@ -259,7 +265,7 @@ def exit_fatal(logger:Logger) -> None:
 	logger.log(f"Terminating due to fatal error.", level=6, newline=True)
 	logger.close()
 
-	sys.exit(1)
+	default_sigterm_handler()
 
 
 # ================================================================== DRIVER CODE
