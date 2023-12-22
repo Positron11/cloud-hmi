@@ -55,26 +55,37 @@ class Logger:
 
 	# get open logfile path
 	def __str__(self):
-		return self.logfile.name	
+		return self.logfile.name
 
 
-	# logging function
-	def log(self, string:str, level:int=3, newline=False, endline:bool=True) -> None:
+	# check if the last line in the log is terminated
+	def previous_line_terminated(self) -> bool:
 		# get last char (if possible) to check if previous entry terminated
 		try: 
 			self.logfile.seek(self.logfile.tell() - 1, os.SEEK_SET)
-			prevterm = self.logfile.read(1) in ["\n", ""]
+			return self.logfile.read(1) in ["\n", ""]
 		
 		except: # beginning of file 
-			prevterm = True
+			return True
 
+
+	# logging function
+	def log(self, string:str, level:int=3, force_newline=False, endline:bool=True) -> None:
+		is_newline = self.previous_line_terminated()
+		
 		# prepend timestamp and level if last char newline (ie. this is a new entry)
-		if newline or prevterm: out = f"""{strftime("%T", gmtime())} | {self.levels[level]}{string}"""
+		if force_newline or is_newline: out = f"""{strftime("%T", gmtime())} | {self.levels[level]}{string}"""
 		else: out = f"""{string}"""
 		
 		# append newline if log entry is completed, prepend if specified
-		if newline and not prevterm: out = "\n" + out
+		if force_newline and not is_newline: out = "\n" + out
 		print(out, end="\n" if endline else "", file=self.logfile)
+
+
+	# plain print to logfile
+	def print(self, string:str):
+		newline = "\n" * (not self.previous_line_terminated())
+		print(f"""{newline}{string}""", file=self.logfile)
 
 
 	# close logfile
@@ -209,11 +220,11 @@ def daemon() -> None:
 	sh.run(f"echo 'Daemon started. Logging to {logger}.'", shell=True)
 
 	# initial information
-	logger.log(f"Welcome to the Catalis Cloud HMI Poller Daemon", level=Logger.DEFAULT)
-	logger.log(f"Session date: {strftime('%F', gmtime())} (GMT)", level=Logger.DEFAULT)
-	logger.log(f"Filesystem label: {fs_label}", level=Logger.DEFAULT)
-	logger.log(f"Mount point: {CFG.MOUNTPOINT}", level=Logger.DEFAULT)
-	logger.log(f"HMI TCP/IP host addr.: {CFG.MOUNTPOINT}", level=Logger.DEFAULT)
+	logger.print(f"Welcome to the Catalis Cloud HMI Poller Daemon")
+	logger.print(f"Session date: {strftime('%F', gmtime())} (GMT)")
+	logger.print(f"Filesystem label: {fs_label}")
+	logger.print(f"Mount point: {CFG.MOUNTPOINT}")
+	logger.print(f"HMI TCP/IP host address: {CFG.MOUNTPOINT}\n")
 
 	# initialize database
 	db = PollDB(hmid=hmid)
@@ -251,7 +262,7 @@ def daemon() -> None:
 
 # custom clean exit handler
 def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
-	logger.log(f"Terminating daemon cleanly.", level=Logger.DEFAULT, newline=True)
+	logger.print(f"\nTerminated cleanly at {strftime('%T', gmtime())}.")
 	logger.close()
 
 	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
@@ -260,7 +271,7 @@ def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
 
 # custom error exit handler
 def exit_fatal(logger:Logger) -> None:
-	logger.log(f"Terminating due to fatal error.", level=Logger.DEFAULT, newline=True)
+	logger.print(f"\nTerminated due to fatal error at {strftime('%T', gmtime())}.")
 	logger.close()
 
 	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logger}'", shell=True) # write to journalctl log
