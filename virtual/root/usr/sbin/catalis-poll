@@ -82,83 +82,88 @@ class Logger:
 
 # ================================================================= DATA PACKETS
 
+
 # data packet definition class
 class PacketDefinition:
 	def __init__(self, type:str, addresses:list):
 		self.type = type
 		self.addresses = addresses
 
-# ========================================================== DATABASE OPERATIONS
+
+# =========================================================== POLL DATA DATABASE
 
 
-# initialize database
-def init_db(hmid:str, logger:Logger) -> apsw.Connection:
-	try: 
-		# try to connect to database
-		logger.log("Init (1/2): Connecting to database... ", endline=False)
-		
-		# create db subdirectory
-		subdir = "current"
-		sh.run(f"mkdir -p {CFG.MOUNTPOINT}/{subdir}", shell=True)
+class PollDB:
+	def __init__(self, hmid:str):
+		self.basepath = f"{CFG.MOUNTPOINT}/current"
+		self.dbpath =  f"{self.basepath}/polldata-hmi{hmid}.sqlite3"
+		self.connection = None
 
-		dbpath = f"{CFG.MOUNTPOINT}/{subdir}/polldata-hmi{hmid}.sqlite3"
-		exists = int(sh.getoutput(f"test -f {dbpath} && echo 1 || echo 0"))
-		connection = apsw.Connection(dbpath)
-		
-		logger.log(f"{'connected to' if exists else 'created'} {dbpath}.")
-
-		# try to initialize database
-		logger.log("Init (2/2): Initializing database... ", endline=False)
-		
-		connection.execute("""CREATE TABLE IF NOT EXISTS polls(
-					 id INTEGER PRIMARY KEY,
-					 timestamp TEXT NOT NULL UNIQUE,
-					 type TEXT NOT NULL,
-					 data TEXT NOT NULL
-		);""")
-		
-		logger.log("done.")
 	
-	except Exception as e:	# failed to initialize database
-		logger.log("error.")
-		logger.log(("Unable to open/create database file: check mountpoint exists + "
-	   		 "permissions (Sugg. fixes: Check mountpoint defined in "
-			 "/etc/catalis/global.conf and consult with your system "
-			 "administrator)."), level=0)
-		logger.log(e, level=5)
-		
-		exit_fatal(logger)
-
-	return connection
-
-
-# write poll data to database
-def write_db(db:apsw.Connection, type:str, data:str, logger:Logger) -> None:
-	logger.log(f"Writing to database... ", endline=False)
-
-	try:
-		timestamp = strftime("%s", gmtime())
-		db.execute("INSERT INTO polls(timestamp, type, data) VALUES(?,?,?);", (timestamp, type, data))
-		logger.log("written.")
-
-	# failed to write to database
-	except Exception as e0:
-		e = e0 # set exception to general exception
-		logger.log("error.")
-		logger.log(f"Failed while writing to database: ", level=0, endline=False)
-		
-		try: # check if can open db, if yes assume permissions error
-			test = apsw.Connection(db.filename, flags=apsw.SQLITE_OPEN_READWRITE)
-			logger.log("check mounted filesytem permissions ", endline=0)
+	# initialize database
+	def initialize(self, logger:Logger) -> None:
+		try: 
+			# try to connect to database
+			logger.log("Init (1/2): Connecting to database... ", endline=False)
 			
-		except Exception as e1: # otherwise, assume database deleted
-			e = e1 # make exception more specific
-			logger.log("ensure local DB has not been deleted ", endline=0)
+			# create db subdirectory
+			sh.run(f"mkdir -p {self.basepath}", shell=True)
 
-		logger.log("(Sugg. fixes: Try re-inserting the storage volume).")
-		logger.log(e, level=5)
+			exists = int(sh.getoutput(f"test -f {self.dbpath} && echo 1 || echo 0"))
+			self.connection = apsw.Connection(self.dbpath)
+			
+			logger.log(f"{'connected to' if exists else 'created'} {self.connection.filename}.")
+
+			# try to initialize database
+			logger.log("Init (2/2): Initializing database... ", endline=False)
+			
+			self.connection.execute("""CREATE TABLE IF NOT EXISTS polls(
+						id INTEGER PRIMARY KEY,
+						timestamp TEXT NOT NULL UNIQUE,
+						type TEXT NOT NULL,
+						data TEXT NOT NULL
+			);""")
+			
+			logger.log("done.")
 		
-		exit_fatal(logger)
+		except Exception as e:	# failed to initialize database
+			logger.log("error.")
+			logger.log(("Unable to open/create database file: check mountpoint exists + "
+				"permissions (Sugg. fixes: Check mountpoint defined in "
+				"/etc/catalis/global.conf and consult with your system "
+				"administrator)."), level=0)
+			logger.log(e, level=5)
+			
+			exit_fatal(logger)
+
+
+	# write poll data to database
+	def write(self, type:str, data:str, logger:Logger) -> None:
+		logger.log(f"Writing to database... ", endline=False)
+
+		try:
+			timestamp = strftime("%s", gmtime())
+			self.connection.execute("INSERT INTO polls(timestamp, type, data) VALUES(?,?,?);", (timestamp, type, data))
+			logger.log("written.")
+
+		# failed to write to database
+		except Exception as e0:
+			e = e0 # set exception to general exception
+			logger.log("error.")
+			logger.log(f"Failed while writing to database: ", level=0, endline=False)
+			
+			try: # check if can open db, if yes assume permissions error
+				test = apsw.Connection(self.connection.filename, flags=apsw.SQLITE_OPEN_READWRITE)
+				logger.log("check mounted filesytem permissions ", endline=0)
+				
+			except Exception as e1: # otherwise, assume database deleted
+				e = e1 # make exception more specific
+				logger.log("ensure local DB has not been deleted ", endline=0)
+
+			logger.log("(Sugg. fixes: Try re-inserting the storage volume).")
+			logger.log(e, level=5)
+			
+			exit_fatal(logger)
 
 
 # ====================================================================== POLLING
@@ -192,8 +197,8 @@ def daemon() -> None:
 	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
 	hmid = fs_label.strip(CFG.LABEL_PREFIX)
 
-	# initialize logger
-	logger = Logger(f"/var/log/catalis/poll-{strftime('%d%m%Y-%H%M%S', gmtime())}.log")
+	# initialize logger 
+	logger = Logger(logfile=f"/var/log/catalis/poll-{strftime('%d%m%Y-%H%M%S', gmtime())}.log")
 
 	# register custom standard termination exit handler
 	signal.signal(signal.SIGTERM, partial(exit_clean, logger))
@@ -208,8 +213,9 @@ def daemon() -> None:
 	logger.log(f"Mount point: {CFG.MOUNTPOINT}", level=6)
 	logger.log(f"HMI TCP/IP host addr.: {CFG.MOUNTPOINT}", level=6)
 
-	# initialize + get database connection
-	db = init_db(logger=logger, hmid=hmid)
+	# initialize database
+	db = PollDB(hmid=hmid)
+	db.initialize(logger=logger)
 
 	# initialize TCP connection
 	try:
@@ -221,7 +227,7 @@ def daemon() -> None:
 		
 		exit_fatal(logger)
 
-	pdef = PacketDefinition(type="report", addresses=[0, 1, 2])
+	pdef = PacketDefinition(type="report", addresses=[2000, 2001, 2002])
 
 	# main loop
 	pc = 1
@@ -232,7 +238,7 @@ def daemon() -> None:
 
 		# write data to db
 		logger.log(f"Poll #{pc} (2/2): ", endline=False)
-		write_db(db=db, type=pdef.type, data=json.dumps(data), logger=logger)
+		db.write(type=pdef.type, data=json.dumps(data), logger=logger)
 		
 		pc += 1
 		sleep(int(CFG.POLL_INTERVAL))
