@@ -128,7 +128,7 @@ class PollDB:
 			
 			logger.log("done.")
 		
-		except Exception as e:	# failed to initialize database
+		except apsw.CantOpenError as e:	# failed to initialize database
 			logger.log("error.")
 			logger.log(("Unable to open/create database file: check mountpoint exists + "
 				"permissions (Sugg. fixes: Check mountpoint defined in "
@@ -149,7 +149,7 @@ class PollDB:
 			logger.log("written.")
 
 		# failed to write to database
-		except Exception as e0:
+		except apsw.ReadOnlyError as e0:
 			e = e0 # set exception to general exception
 			logger.log("error.")
 			logger.log(f"Failed while writing to database: ", level=Logger.FATAL, endline=False)
@@ -158,7 +158,7 @@ class PollDB:
 				test = apsw.Connection(self.connection.filename, flags=apsw.SQLITE_OPEN_READWRITE)
 				logger.log("check mounted filesytem permissions ", endline=0)
 				
-			except Exception as e1: # otherwise, assume database deleted
+			except apsw.CantOpenError as e1: # otherwise, assume database deleted
 				e = e1 # make exception more specific
 				logger.log("ensure local DB has not been deleted ", endline=0)
 
@@ -181,7 +181,7 @@ def poll(client:ModbusClient, addresses:list, logger:Logger) -> dict:
 			logger.log("recieved.")
 			break
 		
-		except: 
+		except TypeError: # if None value exists in data (ie. failed to retrieve a register)
 			logger.log("error.")
 			logger.log(f"No data received from link. Retrying in {CFG.RETRY_INTERVAL}s...", level=Logger.ERROR, endline=False)
 
@@ -223,7 +223,7 @@ def daemon() -> None:
 	try:
 		hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLL_INTERVAL)
 
-	except Exception as e:
+	except Exception as e: # [todo) find and replace with actual exception
 		logger.log("Unable to initialize MODBUS TCP connection (Sugg. fixes: Consult with system administrator).", level=Logger.FATAL)
 		logger.log(e, level=Logger.TRACE)
 		
@@ -249,20 +249,13 @@ def daemon() -> None:
 # ================================================================ EXIT HANDLERS
 
 
-# Raise SIGTERM again to trigger the default handler
-def default_sigterm_handler():
-	signal.signal(signal.SIGTERM, signal.SIG_DFL)
-	os.kill(os.getpid(), signal.SIGTERM)
-
-
 # custom clean exit handler
 def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
 	logger.log(f"Terminating daemon cleanly.", level=Logger.DEFAULT, newline=True)
 	logger.close()
 
 	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
-	
-	default_sigterm_handler()
+	sys.exit(0)
 
 
 # custom error exit handler
@@ -271,8 +264,7 @@ def exit_fatal(logger:Logger) -> None:
 	logger.close()
 
 	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logger}'", shell=True) # write to journalctl log
-
-	default_sigterm_handler()
+	sys.exit(1)
 
 
 # ================================================================== DRIVER CODE
