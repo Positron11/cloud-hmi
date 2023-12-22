@@ -31,7 +31,9 @@ apsw.bestpractice.apply((
 class CFG:
 	FSTYPE 			= os.environ.get("CATALIS_FSTYPE", 			"vfat")
 	LABEL_PREFIX 	= os.environ.get("CATALIS_LABEL_PREFIX", 	"DATA-HMI")
-	MOUNTPOINT 		= os.environ.get("CATALIS_MOUNTPOINT", 		"/srv/CatalisDATA")
+	MOUNTPOINT 		= os.environ.get("CATALIS_MOUNTPOINT", 		"/srv/CatalisDATA/")
+	DB_SUBDIR 		= os.environ.get("CATALIS_DB_SUBDIR", 		"current/")
+	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 		"polldata-hmi$HMID")
 	HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 		"192.168.1.2")
 	POLL_INTERVAL 	= os.environ.get("CATALIS_POLL_INTERVAL", 	"5")
 	RETRY_INTERVAL 	= os.environ.get("CATALIS_RETRY_INTERVAL", 	"5")
@@ -95,8 +97,8 @@ class PacketDefinition:
 
 class PollDB:
 	def __init__(self, hmid:str):
-		self.basepath = os.path.join(CFG.MOUNTPOINT, "current")
-		self.dbpath =  os.path.join(self.basepath, f"polldata-hmi{hmid}.sqlite3")
+		self.basepath = os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR)
+		self.dbpath =  os.path.join(self.basepath, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
 		self.connection = None
 
 	
