@@ -8,8 +8,8 @@ After=dev-%i.device
 Type=oneshot
 RemainAfterExit=yes
 EnvironmentFile=/etc/catalis/global.conf
-ExecStart=/bin/mount -t $FSTYPE -o flush /dev/%i $MOUNTPOINT
-ExecStop=/bin/umount $MOUNTPOINT
+ExecStart=/bin/mount -t $CATALIS_FSTYPE -o flush /dev/%i $CATALIS_MOUNTPOINT
+ExecStop=/bin/umount $CATALIS_MOUNTPOINT
 
 [Install]
 WantedBy=multi-user.target

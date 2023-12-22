@@ -7,8 +7,8 @@ Before=catalis-chmi@%i.service
 Type=oneshot
 RemainAfterExit=yes
 EnvironmentFile=/etc/catalis/global.conf
-ExecStart=/usr/sbin/catalis-init %i $MOUNTPOINT
-ExecStop=/usr/sbin/catalis-cleanup $MOUNTPOINT
+ExecStart=/usr/sbin/catalis-init %i $CATALIS_MOUNTPOINT
+ExecStop=/usr/sbin/catalis-cleanup $CATALIS_MOUNTPOINT
 
 [Install]
 WantedBy=multi-user.target
