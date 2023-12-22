@@ -24,7 +24,7 @@ apsw.bestpractice.apply((
 ))
 
 
-# ================================================================ GLOBALS SETUP
+# ================================================================= CONFIG SETUP
 
 
 # structure class for dict -> obj
@@ -34,15 +34,6 @@ class Struct:
 
 # create config object
 CFG = Struct(**os.environ)
-
-
-# set logfile
-logfile = f"/var/log/catalis/poll-{strftime('%d%m%Y-%H%M%S', gmtime())}.log"
-
-
-# get filesytem label and device id
-fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
-hmid = fs_label.strip(CFG.LABEL_PREFIX)
 
 
 # ====================================================================== LOGGING
@@ -58,6 +49,11 @@ class Logger:
 	# constructor
 	def __init__(self, logfile:str):
 		self.logfile = open(logfile, "a+")
+
+
+	# get open logfile path
+	def __str__(self):
+		return self.logfile.name	
 
 
 	# logging function
@@ -148,17 +144,15 @@ def write_db(db:apsw.Connection, type:str, data:str, logger:Logger) -> None:
 	# failed to write to database
 	except Exception as e0:
 		e = e0 # set exception to general exception
-
 		logger.log("error.")
 		logger.log(f"Failed while writing to database: ", level=0, endline=False)
 		
 		try: # check if can open db, if yes assume permissions error
-			test = apsw.Connection(f"{CFG.MOUNTPOINT}/polldata-hmi{hmid}.sqlite3", flags=apsw.SQLITE_OPEN_READWRITE)
+			test = apsw.Connection(db.filename, flags=apsw.SQLITE_OPEN_READWRITE)
 			logger.log("check mounted filesytem permissions ", endline=0)
 			
 		except Exception as e1: # otherwise, assume database deleted
 			e = e1 # make exception more specific
-
 			logger.log("ensure local DB has not been deleted ", endline=0)
 
 		logger.log("(Sugg. fixes: Try re-inserting the storage volume).")
@@ -194,14 +188,18 @@ def poll(client:ModbusClient, addresses:list, logger:Logger) -> dict:
 
 # daemon
 def daemon() -> None:
-	# initialize logger
-	logger = Logger(logfile)
+	# get filesytem label and device id
+	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
+	hmid = fs_label.strip(CFG.LABEL_PREFIX)
 
 	# register custom standard termination exit handler
 	signal.signal(signal.SIGTERM, partial(exit_clean, logger))
 
+	# initialize logger
+	logger = Logger(f"/var/log/catalis/poll-{strftime('%d%m%Y-%H%M%S', gmtime())}.log")
+
 	# write to journalctl log
-	sh.run(f"echo 'Daemon started. Logging to {logfile}.'", shell=True)
+	sh.run(f"echo 'Daemon started. Logging to {logger}.'", shell=True)
 
 	# initial information
 	logger.log(f"Welcome to the Catalis Cloud HMI Poller Daemon", level=6)
@@ -261,7 +259,7 @@ def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
 
 # custom error exit handler
 def exit_fatal(logger:Logger) -> None:
-	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logfile}'", shell=True) # write to journalctl log
+	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logger}'", shell=True) # write to journalctl log
 	
 	logger.log(f"Terminating due to fatal error.", level=6, newline=True)
 	logger.close()
