@@ -29,12 +29,12 @@ apsw.bestpractice.apply((
 
 # create config object
 class CFG:
-	CATALIS_LABEL_PREFIX = os.environ.get("CATALIS_LABEL_PREFIX", "DATA-HMI")
-	CATALIS_FSTYPE = os.environ.get("CATALIS_FSTYPE", "vfat")
-	CATALIS_MOUNTPOINT = os.environ.get("CATALIS_MOUNTPOINT", "/srv/CatalisDATA")
-	CATALIS_HMI_HOST = os.environ.get("CATALIS_HMI_HOST", "192.168.1.2")
-	CATALIS_POLL_INTERVAL = os.environ.get("CATALIS_POLL_INTERVAL", "5")
-	CATALIS_RETRY_INTERVAL = os.environ.get("CATALIS_RETRY_INTERVAL", "5")
+	FSTYPE 			= os.environ.get("CATALIS_FSTYPE", 			"vfat")
+	LABEL_PREFIX 	= os.environ.get("CATALIS_LABEL_PREFIX", 	"DATA-HMI")
+	MOUNTPOINT 		= os.environ.get("CATALIS_MOUNTPOINT", 		"/srv/CatalisDATA")
+	HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 		"192.168.1.2")
+	POLL_INTERVAL 	= os.environ.get("CATALIS_POLL_INTERVAL", 	"5")
+	RETRY_INTERVAL 	= os.environ.get("CATALIS_RETRY_INTERVAL", 	"5")
 
 
 # ====================================================================== LOGGING
@@ -95,7 +95,7 @@ class PacketDefinition:
 
 class PollDB:
 	def __init__(self, hmid:str):
-		self.basepath = os.path.join(CFG.CATALIS_MOUNTPOINT, "current")
+		self.basepath = os.path.join(CFG.MOUNTPOINT, "current")
 		self.dbpath =  os.path.join(self.basepath, f"polldata-hmi{hmid}.sqlite3")
 		self.connection = None
 
@@ -181,9 +181,9 @@ def poll(client:ModbusClient, addresses:list, logger:Logger) -> dict:
 		
 		except: 
 			logger.log("error.")
-			logger.log(f"No data received from link. Retrying in {CFG.CATALIS_RETRY_INTERVAL}s...", level=Logger.ERROR, endline=False)
+			logger.log(f"No data received from link. Retrying in {CFG.RETRY_INTERVAL}s...", level=Logger.ERROR, endline=False)
 
-		sleep(int(CFG.CATALIS_RETRY_INTERVAL))
+		sleep(int(CFG.RETRY_INTERVAL))
 
 	return data
 
@@ -195,7 +195,7 @@ def poll(client:ModbusClient, addresses:list, logger:Logger) -> dict:
 def daemon() -> None:
 	# get filesytem label and device id
 	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
-	hmid = fs_label.strip(CFG.CATALIS_LABEL_PREFIX)
+	hmid = fs_label.strip(CFG.LABEL_PREFIX)
 
 	# initialize logger 
 	logger = Logger(logfile=f"/var/log/catalis/poll-{strftime('%d%m%Y-%H%M%S', gmtime())}.log")
@@ -210,8 +210,8 @@ def daemon() -> None:
 	logger.log(f"Welcome to the Catalis Cloud HMI Poller Daemon", level=Logger.DEFAULT)
 	logger.log(f"Session date: {strftime('%F', gmtime())} (GMT)", level=Logger.DEFAULT)
 	logger.log(f"Filesystem label: {fs_label}", level=Logger.DEFAULT)
-	logger.log(f"Mount point: {CFG.CATALIS_MOUNTPOINT}", level=Logger.DEFAULT)
-	logger.log(f"HMI TCP/IP host addr.: {CFG.CATALIS_MOUNTPOINT}", level=Logger.DEFAULT)
+	logger.log(f"Mount point: {CFG.MOUNTPOINT}", level=Logger.DEFAULT)
+	logger.log(f"HMI TCP/IP host addr.: {CFG.MOUNTPOINT}", level=Logger.DEFAULT)
 
 	# initialize database
 	db = PollDB(hmid=hmid)
@@ -219,7 +219,7 @@ def daemon() -> None:
 
 	# initialize TCP connection
 	try:
-		hmi = ModbusClient(host=CFG.CATALIS_HMI_HOST, timeout=CFG.CATALIS_POLL_INTERVAL)
+		hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLL_INTERVAL)
 
 	except Exception as e:
 		logger.log("Unable to initialize MODBUS TCP connection (Sugg. fixes: Consult with system administrator).", level=Logger.FATAL)
@@ -241,7 +241,7 @@ def daemon() -> None:
 		db.write(type=pdef.type, data=json.dumps(data), logger=logger)
 		
 		pc += 1
-		sleep(int(CFG.CATALIS_POLL_INTERVAL))
+		sleep(int(CFG.POLL_INTERVAL))
 
 
 # ================================================================ EXIT HANDLERS
