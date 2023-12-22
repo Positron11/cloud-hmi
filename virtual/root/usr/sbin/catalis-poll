@@ -192,11 +192,11 @@ def daemon() -> None:
 	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
 	hmid = fs_label.strip(CFG.LABEL_PREFIX)
 
-	# register custom standard termination exit handler
-	signal.signal(signal.SIGTERM, partial(exit_clean, logger))
-
 	# initialize logger
 	logger = Logger(f"/var/log/catalis/poll-{strftime('%d%m%Y-%H%M%S', gmtime())}.log")
+
+	# register custom standard termination exit handler
+	signal.signal(signal.SIGTERM, partial(exit_clean, logger))
 
 	# write to journalctl log
 	sh.run(f"echo 'Daemon started. Logging to {logger}.'", shell=True)
