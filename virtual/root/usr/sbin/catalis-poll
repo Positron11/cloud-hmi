@@ -41,14 +41,6 @@ class CFG:
 	RETRY_INTERVAL 	= os.environ.get("CATALIS_RETRY_INTERVAL", 	"5")
 
 
-# ==================================================================== UTILITIES
-
-
-# get human-readable simestamp
-def timestamp() -> str:
-	return strftime("%T", gmtime())
-
-
 # ================================================================= DATA PACKETS
 
 
@@ -211,7 +203,7 @@ def daemon() -> None:
 
 # custom clean exit handler
 def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
-	logger.print(f"\nTerminated cleanly at {timestamp()}.")
+	logger.print(f"\nTerminated cleanly at {strftime("%T", gmtime())}.")
 	logger.close()
 
 	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
@@ -220,7 +212,7 @@ def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
 
 # custom error exit handler
 def exit_fatal(logger:Logger) -> None:
-	logger.print(f"\nTerminated due to fatal error at {timestamp()}.")
+	logger.print(f"\nTerminated due to fatal error at {strftime("%T", gmtime())}.")
 	logger.close()
 
 	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logger}'", shell=True) # write to journalctl log
