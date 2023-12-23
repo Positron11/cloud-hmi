@@ -5,11 +5,8 @@
 
 import os
 import sys
-import signal
 from time import sleep
 import subprocess as sh
-from types import FrameType
-from functools import partial
 
 
 # =================================================================== LED OBJECT
