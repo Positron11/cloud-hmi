@@ -39,6 +39,14 @@ class CFG:
 	RETRY_INTERVAL 	= os.environ.get("CATALIS_RETRY_INTERVAL", 	"5")
 
 
+# ==================================================================== UTILITIES
+
+
+# get human-readable simestamp
+def timestamp() -> str:
+	return strftime("%T", gmtime())
+
+
 # ====================================================================== LOGGING
 
 
@@ -74,7 +82,7 @@ class Logger:
 		is_newline = self.previous_line_terminated()
 		
 		# prepend timestamp and level if last char newline (ie. this is a new entry)
-		if force_newline or is_newline: out = f"""{strftime("%T", gmtime())} | {self.levels[level]}{string}"""
+		if force_newline or is_newline: out = f"""{timestamp()} | {self.levels[level]}{string}"""
 		else: out = f"""{string}"""
 		
 		# append newline if log entry is completed, prepend if specified
@@ -255,7 +263,7 @@ def daemon() -> None:
 
 # custom clean exit handler
 def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
-	logger.print(f"\nTerminated cleanly at {strftime('%T', gmtime())}.")
+	logger.print(f"\nTerminated cleanly at {timestamp()}.")
 	logger.close()
 
 	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
@@ -264,7 +272,7 @@ def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
 
 # custom error exit handler
 def exit_fatal(logger:Logger) -> None:
-	logger.print(f"\nTerminated due to fatal error at {strftime('%T', gmtime())}.")
+	logger.print(f"\nTerminated due to fatal error at {timestamp()}.")
 	logger.close()
 
 	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logger}'", shell=True) # write to journalctl log
