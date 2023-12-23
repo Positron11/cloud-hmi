@@ -2,4 +2,8 @@
 
 # start polling service
 /bin/systemctl start catalis-poll@$1.service
-echo "(main) [1/1] Started polling daemon"
+echo "(main) [1/2] Started polling daemon"
+
+# start broadcast service
+/bin/systemctl start catalis-csync@$1.service
+echo "(main) [2/2] Started cloud sync daemon"

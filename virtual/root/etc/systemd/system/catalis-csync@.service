@@ -1,0 +1,13 @@
+[Unit]
+Description=Catalis Cloud HMI poll data upload service
+BindsTo=catalis-chmi@%i.service
+Requires=catalis-mount@%i.service
+After=catalis-mount@%i.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/catalis/global.conf
+ExecStart=/usr/sbin/catalis-csync %i
+
+[Install]
+WantedBy=multi-user.target

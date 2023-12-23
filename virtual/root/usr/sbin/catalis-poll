@@ -31,14 +31,14 @@ apsw.bestpractice.apply((
 
 # create config object
 class CFG:
-	FSTYPE 			= os.environ.get("CATALIS_FSTYPE", 			"vfat")
-	LABEL_PREFIX 	= os.environ.get("CATALIS_LABEL_PREFIX", 	"DATA-HMI")
-	MOUNTPOINT 		= os.environ.get("CATALIS_MOUNTPOINT", 		"/srv/CatalisDATA/")
-	DB_SUBDIR 		= os.environ.get("CATALIS_DB_SUBDIR", 		"current/")
-	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 		"polldata-hmi$HMID")
-	HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 		"192.168.1.2")
-	POLL_INTERVAL 	= os.environ.get("CATALIS_POLL_INTERVAL", 	"5")
-	RETRY_INTERVAL 	= os.environ.get("CATALIS_RETRY_INTERVAL", 	"5")
+	FSTYPE 					= os.environ.get("CATALIS_FSTYPE", 					"vfat")
+	LABEL_PREFIX 			= os.environ.get("CATALIS_LABEL_PREFIX", 			"DATA-HMI")
+	MOUNTPOINT 				= os.environ.get("CATALIS_MOUNTPOINT", 				"/srv/CatalisDATA/")
+	DB_SUBDIR 				= os.environ.get("CATALIS_DB_SUBDIR", 				"current/")
+	DB_PATTERN 				= os.environ.get("CATALIS_DB_PATTERN", 				"polldata-hmi$HMID")
+	HMI_HOST 				= os.environ.get("CATALIS_HMI_HOST", 				"192.168.1.2")
+	POLLING_FREQUENCY 		= os.environ.get("CATALIS_POLLING_FREQUENCY", 		"5")
+	POLL_RETRY_INTERVAL 	= os.environ.get("CATALIS_POLL_RETRY_INTERVAL", 	"10")
 
 
 # ================================================================= DATA PACKETS
@@ -142,9 +142,9 @@ def poll(client:ModbusClient, addresses:list[str], logger:Logger) -> dict:
 		
 		except TypeError: # if None value exists in data (ie. failed to retrieve a register)
 			logger.log("error.")
-			logger.log(f"No data received from link. Retrying in {CFG.RETRY_INTERVAL}s...", level=Logger.ERROR, endline=False)
+			logger.log(f"No data received from link. Retrying in {CFG.POLL_RETRY_INTERVAL}s...", level=Logger.ERROR, endline=False)
 
-		sleep(int(CFG.RETRY_INTERVAL))
+		sleep(int(CFG.POLL_RETRY_INTERVAL))
 
 	return data
 
@@ -179,7 +179,7 @@ def daemon() -> None:
 	db.initialize(logger=logger)
 
 	# initialize TCP connection
-	hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLL_INTERVAL)
+	hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLLING_FREQUENCY)
 
 	pdef = PacketDefinition(type="report", addresses=[2000, 2001, 2002])
 
@@ -195,7 +195,7 @@ def daemon() -> None:
 		db.write(type=pdef.type, data=json.dumps(data), logger=logger)
 		
 		pc += 1
-		sleep(int(CFG.POLL_INTERVAL))
+		sleep(int(CFG.POLLING_FREQUENCY))
 
 
 # ================================================================ EXIT HANDLERS

@@ -1,0 +1,167 @@
+#!/bin/python
+
+# ======================================================= IMPORTS & MODULE SETUP
+
+
+import os
+import sys
+import signal
+import subprocess as sh
+from time import sleep, strftime, gmtime
+from types import FrameType
+from functools import partial
+from pathlib import Path
+
+from CatalisLogger.logging import Logger
+
+import apsw, apsw.bestpractice
+
+
+# initialize apsw
+apsw.bestpractice.apply((
+	apsw.bestpractice.connection_busy_timeout,
+	apsw.bestpractice.connection_enable_foreign_keys,
+	apsw.bestpractice.connection_dqs
+))
+
+
+# ================================================================= CONFIG SETUP
+
+
+# create config object
+class CFG:
+	FSTYPE 					= os.environ.get("CATALIS_FSTYPE", 							"vfat")
+	LABEL_PREFIX 			= os.environ.get("CATALIS_LABEL_PREFIX", 					"DATA-HMI")
+	MOUNTPOINT 				= os.environ.get("CATALIS_MOUNTPOINT", 						"/srv/CatalisDATA/")
+	DB_SUBDIR 				= os.environ.get("CATALIS_DB_SUBDIR", 						"current/")
+	DB_PATTERN 				= os.environ.get("CATALIS_DB_PATTERN", 						"polldata-hmi$HMID")
+	HMI_HOST 				= os.environ.get("CATALIS_HMI_HOST", 						"192.168.1.2")
+	SYNCING_FREQUENCY 		= os.environ.get("CATALIS_SYNCING_FREQUENCY", 				"30")
+	CONNECT_RETRY_INTERVAL 	= os.environ.get("CATALIS_SYNC_DB_CONNECT_RETRY_INTERVAL", 	"60")
+
+
+# ================================================================== STATE CLASS
+
+
+class State():
+	# initialize statefile
+	def __init__(self, statefile:str, default:str=""):
+		self._statefile = statefile
+		
+		# create parent dirs and write default if file doesn't exist
+		sf_path = Path(self._statefile)
+		sf_path.parent.mkdir(exist_ok=True, parents=True)
+		if not sf_path.exists(): sf_path.write_text(default)
+
+
+	# get state
+	@property
+	def state(self) -> str:
+		with open(self._statefile, "r") as f:
+			value = f.read()
+			return value
+	
+
+	# set state
+	@state.setter
+	def state(self, value:str) -> None:
+		with open(self._statefile, "w") as f:
+			f.write(value)
+
+
+# ================================================================== MAIN DAEMON
+
+
+# daemon
+def daemon() -> None:
+	# get device id and database path
+	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
+	hmid = fs_label.strip(CFG.LABEL_PREFIX)
+	dbpath = os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
+
+	# initialize logger 
+	logger = Logger(logfile=f"/var/log/catalis/csync-{strftime('%d%m%Y-%H%M%S', gmtime())}.log")
+
+	# register custom standard termination exit handler
+	signal.signal(signal.SIGTERM, partial(exit_clean, logger))
+
+	# initialize state file
+	lastsync = State("/etc/catalis/state/csync-lastsync", "110")
+
+	# write to journalctl log
+	sh.run(f"echo 'Daemon started. Logging to {logger}.'", shell=True)
+
+	# initial information
+	logger.print(f"Welcome to the Catalis Cloud HMI Poller Daemon")
+	logger.print(f"Session date: {strftime('%F', gmtime())} (GMT)")
+	logger.print(f"Filesystem label: {fs_label}")
+	logger.print(f"Mount point: {CFG.MOUNTPOINT}")
+	logger.print(f"HMI TCP/IP host address: {CFG.HMI_HOST}\n")
+
+	# attempt to open database
+	logger.log("(init) [1/1] Connecting to database in ReadOnly mode... ", endline=False)
+
+	while True:
+		try:
+			db = apsw.Connection(dbpath, flags=apsw.SQLITE_OPEN_READONLY)
+			logger.log(f"connected to {dbpath}.")
+			break
+		
+		except apsw.CantOpenError:
+			logger.log("error.")
+			logger.log(f"Error opening database. Trying again in {CFG.CONNECT_RETRY_INTERVAL}s...", level=Logger.ERROR, endline=False)
+
+			sleep(int(CFG.CONNECT_RETRY_INTERVAL))
+
+	# main upload loop
+	while True:
+		# read latest polls
+		logger.log("(sync) [1/2] Reading latest from database... ", endline=False)
+		data = list(db.execute("SELECT * FROM polls WHERE timestamp > ? ORDER BY timestamp ASC;", (lastsync.state, )))
+
+		# if any new polls
+		if data:
+			logger.log(f"read {len(data)} entries, from {lastsync.state} upwards.")
+			
+			# do stuff
+			for row in data:
+				logger.print(row)
+
+			# set sync state to last entry's timestamp
+			logger.log("(sync) [2/2] Updating sync state... ", endline=False)
+			lastsync.state = data[-1][1]
+			logger.log(f"last synced entry's timestamp: {lastsync.state}.")
+
+		else:
+			logger.log("no new entries.")
+
+		sleep(int(CFG.SYNCING_FREQUENCY))
+
+
+# ================================================================ EXIT HANDLERS
+
+
+# custom clean exit handler
+def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
+	logger.print(f"\nTerminated cleanly at {strftime('%T', gmtime())}.")
+	logger.close()
+
+	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
+	sys.exit(0)
+
+
+# custom error exit handler
+def exit_fatal(logger:Logger) -> None:
+	logger.print(f"\nTerminated due to fatal error at {strftime('%T', gmtime())}.")
+	logger.close()
+
+	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logger}'", shell=True) # write to journalctl log
+	sys.exit(1)
+
+
+# ================================================================== DRIVER CODE
+
+
+# driver
+if __name__ == "__main__":
+	daemon()
