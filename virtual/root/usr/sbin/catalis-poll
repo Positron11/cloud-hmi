@@ -224,7 +224,7 @@ def daemon() -> None:
 	logger.print(f"Session date: {strftime('%F', gmtime())} (GMT)")
 	logger.print(f"Filesystem label: {fs_label}")
 	logger.print(f"Mount point: {CFG.MOUNTPOINT}")
-	logger.print(f"HMI TCP/IP host address: {CFG.MOUNTPOINT}\n")
+	logger.print(f"HMI TCP/IP host address: {CFG.HMI_HOST}\n")
 
 	# initialize database
 	db = PollDB(hmid=hmid)
