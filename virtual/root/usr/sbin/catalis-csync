@@ -7,7 +7,6 @@ import os
 import sys
 import signal
 import subprocess as sh
-from time import sleep, strftime, gmtime
 from datetime import datetime
 from types import FrameType
 from functools import partial
@@ -15,6 +14,7 @@ from pathlib import Path
 
 from CatalisLogger.logging import Logger
 
+from time import sleep, strftime, gmtime
 import apsw, apsw.bestpractice
 
 
@@ -39,6 +39,7 @@ class CFG:
 	HMI_HOST 				= os.environ.get("CATALIS_HMI_HOST", 						"192.168.1.2")
 	SYNCING_FREQUENCY 		= os.environ.get("CATALIS_SYNCING_FREQUENCY", 				"30")
 	CONNECT_RETRY_INTERVAL 	= os.environ.get("CATALIS_SYNC_DB_CONNECT_RETRY_INTERVAL", 	"60")
+	BUSY_RETRY_INTERVAL 	= os.environ.get("CATALIS_SYNC_DB_BUSY_RETRY_INTERVAL", 	"10")
 
 
 # ================================================================== STATE CLASS
@@ -118,25 +119,37 @@ def daemon() -> None:
 	while True:
 		# read latest polls
 		logger.log("(sync) <1/2> Fetching latest packets from database... ", endline=False)
-		data = list(db.execute("SELECT * FROM polls WHERE timestamp > ? ORDER BY timestamp ASC;", (lastsync.state, )))
+		
+		while True:
+			try:
+				data = list(db.execute("SELECT * FROM packets WHERE timestamp > ? ORDER BY timestamp ASC;", (lastsync.state, )))
 
-		# if any new polls...
-		if data:
-			logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync.state)).strftime('%T')} upwards.")
+				# if any new polls...
+				if data:
+					logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync.state)).strftime('%T')} upwards.")
+					
+					# do stuff
+					for row in data:
+						logger.print(row)
+
+					# set sync state to last entry's timestamp
+					logger.log("(sync) <2/2> Updating sync state... ", endline=False)
+					lastsync.state = data[-1][1]
+					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync.state)).strftime('%T')}.")
+
+				else:
+					logger.log("no new entries.")
+
+				sleep(int(CFG.SYNCING_FREQUENCY))
+				break
 			
-			# do stuff
-			for row in data:
-				logger.print(row)
+			# database busy
+			except apsw.BusyError:
+				logger.log("error.")
+				logger.log(f"Database is busy - trying again in {CFG.BUSY_RETRY_INTERVAL}s... ", level=Logger.ERROR, endline=False)
 
-			# set sync state to last entry's timestamp
-			logger.log("(sync) <2/2> Updating sync state... ", endline=False)
-			lastsync.state = data[-1][1]
-			logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync.state)).strftime('%T')}.")
+				sleep(int(CFG.BUSY_RETRY_INTERVAL))
 
-		else:
-			logger.log("no new entries.")
-
-		sleep(int(CFG.SYNCING_FREQUENCY))
 
 
 # ================================================================ EXIT HANDLERS
