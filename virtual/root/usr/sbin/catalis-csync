@@ -86,9 +86,6 @@ def daemon() -> None:
 	# register custom standard termination exit handler
 	signal.signal(signal.SIGTERM, partial(exit_clean, logger))
 
-	# initialize state file
-	lastsync = State("/etc/catalis/state/csync-lastsync", "110")
-
 	# write to journalctl log
 	sh.run(f"echo 'Daemon started. Logging to {logger}.'", shell=True)
 
@@ -113,6 +110,9 @@ def daemon() -> None:
 			logger.log(f"Error opening database. Trying again in {CFG.CONNECT_RETRY_INTERVAL}s...", level=Logger.ERROR, endline=False)
 
 			sleep(int(CFG.CONNECT_RETRY_INTERVAL))
+
+	# initialize state file
+	lastsync = State("/etc/catalis/state/csync-lastsync", "0")
 
 	# main upload loop
 	while True:
