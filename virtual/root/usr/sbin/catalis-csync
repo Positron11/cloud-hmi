@@ -10,7 +10,6 @@ import subprocess as sh
 from datetime import datetime
 from types import FrameType
 from functools import partial
-from pathlib import Path
 
 from CatalisLogger.logging import Logger
 
@@ -40,35 +39,6 @@ class CFG:
 	SYNCING_FREQUENCY 		= os.environ.get("CATALIS_SYNCING_FREQUENCY", 				"30")
 	CONNECT_RETRY_INTERVAL 	= os.environ.get("CATALIS_SYNC_DB_CONNECT_RETRY_INTERVAL", 	"60")
 	BUSY_RETRY_INTERVAL 	= os.environ.get("CATALIS_SYNC_DB_BUSY_RETRY_INTERVAL", 	"10")
-
-
-# ================================================================== STATE CLASS
-
-
-class State():
-	# initialize statefile
-	def __init__(self, statefile:str, default:str=""):
-		self._statefile = statefile
-		
-		# create parent dirs and write default if file doesn't exist
-		sf_path = Path(self._statefile)
-		sf_path.parent.mkdir(exist_ok=True, parents=True)
-		if not sf_path.exists(): sf_path.write_text(default)
-
-
-	# get state
-	@property
-	def state(self) -> str:
-		with open(self._statefile, "r") as f:
-			value = f.read()
-			return value
-	
-
-	# set state
-	@state.setter
-	def state(self, value:str) -> None:
-		with open(self._statefile, "w") as f:
-			f.write(value)
 
 
 # ================================================================== MAIN DAEMON
@@ -102,7 +72,7 @@ def daemon() -> None:
 
 	while True:
 		try:
-			db = apsw.Connection(dbpath, flags=apsw.SQLITE_OPEN_READONLY)
+			db = apsw.Connection(dbpath, flags=apsw.SQLITE_OPEN_READWRITE)
 			logger.log(f"connected to {dbpath}.")
 			break
 		
@@ -112,9 +82,6 @@ def daemon() -> None:
 
 			sleep(int(CFG.CONNECT_RETRY_INTERVAL))
 
-	# initialize state file
-	lastsync = State("/etc/catalis/state/csync-lastsync", "0")
-
 	# main upload loop
 	while True:
 		# read latest polls
@@ -122,11 +89,12 @@ def daemon() -> None:
 		
 		while True:
 			try:
-				data = list(db.execute("SELECT * FROM packets WHERE timestamp > ? ORDER BY timestamp ASC;", (lastsync.state, )))
+				lastsync = list(db.execute("SELECT value FROM meta WHERE type=?", ("lastsync", )))[0][0]
+				data = list(db.execute("SELECT * FROM packets WHERE timestamp > ? ORDER BY timestamp ASC;", (lastsync, )))
 
 				# if any new polls...
 				if data:
-					logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync.state)).strftime('%T')} upwards.")
+					logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')} upwards.")
 					
 					# do stuff
 					for row in data:
@@ -134,8 +102,8 @@ def daemon() -> None:
 
 					# set sync state to last entry's timestamp
 					logger.log("(sync) <2/2> Updating sync state... ", endline=False)
-					lastsync.state = data[-1][1]
-					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync.state)).strftime('%T')}.")
+					db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][1], "lastsync" ))
+					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
 
 				else:
 					logger.log("no new entries.")

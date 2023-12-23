@@ -1,8 +1,8 @@
 [Unit]
 Description=Catalis Cloud HMI MODBUS polling service
 BindsTo=catalis-chmi@%i.service
-Requires=catalis-mount@%i.service
-After=catalis-mount@%i.service
+Requires=catalis-dbinit@%i.service
+After=catalis-dbinit@%i.service
 
 [Service]
 Type=simple

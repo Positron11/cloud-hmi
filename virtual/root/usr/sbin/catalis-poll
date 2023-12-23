@@ -56,9 +56,8 @@ class PacketDefinition:
 
 class PollDB:
 	def __init__(self, hmid:str):
-		self.basepath = os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR)
-		self.dbpath =  os.path.join(self.basepath, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
-		self.connection = None
+		self._dbpath =  os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
+		self._connection = None
 
 	
 	# initialize database
@@ -66,26 +65,8 @@ class PollDB:
 		try: 
 			# try to connect to database
 			logger.log("(init) <1/2>: Connecting to database... ", endline=False)
-			
-			# create db subdirectory
-			os.makedirs(self.basepath, exist_ok=True)
-
-			# initialize connection
-			exists = int(sh.getoutput(f"test -f {self.dbpath} && echo 1 || echo 0"))
-			self.connection = apsw.Connection(self.dbpath)
-			logger.log(f"{'connected to' if exists else 'created'} {self.connection.filename}.")
-
-			# try to initialize database
-			logger.log("(init) <2/2>: Initializing database... ", endline=False)
-	
-			self.connection.execute("""CREATE TABLE IF NOT EXISTS packets (
-						id INTEGER PRIMARY KEY,
-						timestamp TEXT NOT NULL UNIQUE,
-						type TEXT NOT NULL,
-						data TEXT NOT NULL
-			);""")
-			
-			logger.log("done.")
+			self._connection = apsw.Connection(self._dbpath)
+			logger.log(f"connected to {self._connection.filename}.")
 		
 		except apsw.CantOpenError as e:	# failed to initialize database
 			logger.log("error.")
@@ -104,7 +85,7 @@ class PollDB:
 
 		try:
 			timestamp = strftime("%s", gmtime())
-			self.connection.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?);", (timestamp, type, data))
+			self._connection.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?);", (timestamp, type, data))
 			logger.log("written.")
 
 		# failed to write to database
@@ -114,7 +95,7 @@ class PollDB:
 			logger.log(f"Failed while writing to database: ", level=Logger.FATAL, endline=False)
 			
 			try: # check if can open db, if yes assume permissions error
-				test = apsw.Connection(self.connection.filename, flags=apsw.SQLITE_OPEN_READWRITE)
+				test = apsw.Connection(self._connection.filename, flags=apsw.SQLITE_OPEN_READWRITE)
 				logger.log("check mounted filesytem permissions ", endline=0)
 				
 			except apsw.CantOpenError as e1: # otherwise, assume database deleted

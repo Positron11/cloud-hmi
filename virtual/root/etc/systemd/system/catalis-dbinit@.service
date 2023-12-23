@@ -1,15 +1,13 @@
 [Unit]
 Description=Catalis Cloud HMI polling data storage volume mounting service
-BindsTo=catalis-chmi@%i.service
-Requires=dev-%i.device
-After=dev-%i.device
+Requires=catalis-mount@%i.service
+After=catalis-mount@%i.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 EnvironmentFile=/etc/catalis/global.conf
-ExecStart=/usr/sbin/catalis-mount %i
-ExecStop=/usr/sbin/catalis-unmount %i
+ExecStart=/usr/sbin/catalis-dbinit %i
 
 [Install]
 WantedBy=multi-user.target

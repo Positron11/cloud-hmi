@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# unmount device
+/bin/umount $CATALIS_MOUNTPOINT
+echo -n "(unmount) <1/2> Unmounted $1 from $CATALIS_MOUNTPOINT"
+
+# delete mountpoint
+rm -r $CATALIS_MOUNTPOINT
+echo "(unmount) <2/2> Deleted mountpoint $CATALIS_MOUNTPOINT"
