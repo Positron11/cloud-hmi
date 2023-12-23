@@ -27,7 +27,7 @@ class Logger:
 			file.seek(file.tell() - 1, os.SEEK_SET)
 			return file.read(1) in ["\n", ""]
 		
-		except: # beginning of file 
+		except ValueError: # beginning of file 
 			return True
 
 
