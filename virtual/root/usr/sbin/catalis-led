@@ -1,0 +1,120 @@
+#!/bin/python
+
+# ======================================================= IMPORTS & MODULE SETUP
+
+
+import os
+import sys
+import signal
+from time import sleep
+import subprocess as sh
+from types import FrameType
+from functools import partial
+
+
+# =================================================================== LED OBJECT
+
+
+class Led():
+	offset = 454
+
+	# constructor
+	def __init__(self, pin:int):
+		self.gpio = pin + 454
+
+		if not os.path.exists(f"/sys/class/gpio/gpio{self.gpio}"):
+			sh.run(f"echo {self.gpio} > /sys/class/gpio/export", shell=True)
+			sh.run(f"echo out > /sys/class/gpio/gpio{self.gpio}/direction", shell=True)
+
+	# turn LED on
+	def on(self):
+		sh.run(f"echo '1' > /sys/class/gpio/gpio{self.gpio}/value", shell=True)
+	
+	# turn LED on
+	def off(self):
+		sh.run(f"echo '0' > /sys/class/gpio/gpio{self.gpio}/value", shell=True)
+
+
+# ================================================================ SERVICE CLASS
+
+
+class Service():
+	def __init__(self, name:str):
+		self.name = f"{name}.service"
+
+	# get service status
+	def status(self):
+		return sh.getoutput(f"systemctl is-failed {self.name}")
+
+
+# ================================================================== MAIN DAEMON
+
+
+# daemon
+def daemon():
+	identifier = sys.argv[1]
+
+	leds = { 
+		"g1": Led(17), "g2": Led(5), "g3": Led(19), "g4": Led(20),
+		"r1": Led(27), "r2": Led(6), "r3": Led(26), "r4": Led(21) 
+	}
+
+	mapping = [
+		{
+			"service": Service(f"catalis-chmi@{identifier}"),
+			"leds": {
+				"green": Led(17),
+				"red": Led(27)
+			}
+		},
+		{
+			"service": Service(f"catalis-init@{identifier}"),
+			"leds": {
+				"green": Led(5),
+				"red": Led(6)
+			}
+		},
+		{
+			"service": Service(f"catalis-mount@{identifier}"),
+			"leds": {
+				"green": Led(19),
+				"red": Led(26)
+			}
+		},
+		{
+			"service": Service(f"catalis-poll@{identifier}"),
+			"leds": {
+				"green": Led(20),
+				"red": Led(21)
+			}
+		}
+	]
+
+	try:
+		while True:
+			for service in mapping:
+				# turn off all leds for service
+				for led in service["leds"].values(): led.off()
+
+				# set led according to status
+				if service["service"].status() == "failed":	service["leds"]["red"].on()
+				elif service["service"].status() == "active": service["leds"]["green"].on()
+
+			sleep(1)
+
+	# turn off all leds on exit
+	except KeyboardInterrupt:
+		for service in mapping:
+			for led in service["leds"].values():
+				led.off()
+
+
+# ================================================================== DRIVER CODE
+
+
+# driver
+if __name__ == "__main__":
+	daemon()
+
+
+

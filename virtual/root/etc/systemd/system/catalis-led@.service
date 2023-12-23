@@ -1,0 +1,11 @@
+[Unit]
+Description=Catalis Cloud HMI MODBUS polling service
+BindsTo=catalis-chmi@%i.service
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/catalis-led %i
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target

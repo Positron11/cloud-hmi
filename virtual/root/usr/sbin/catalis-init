@@ -1,9 +1,13 @@
 #!/bin/bash
 
+# start service status indicator service
+/bin/systemctl start catalis-led@$1.service
+echo "(init) [1/3] Started service status indicator daemon"
+
 # create mountpoint
 mkdir -p $2
-echo "(init) [1/2] Created mountpoint at $2"
+echo "(init) [2/3] Created mountpoint at $2"
 
 # start mounting service
 /bin/systemctl start catalis-mount@$1.service
-echo "(init) [2/2] Started mount service for /dev/$1"
+echo "(init) [3/3] Started mount service for /dev/$1"
