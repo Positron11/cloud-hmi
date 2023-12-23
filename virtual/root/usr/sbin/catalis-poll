@@ -51,7 +51,7 @@ class PacketDefinition:
 		self.addresses = addresses
 
 
-# =========================================================== POLL DATA DATABASE
+# =================================================== POLL DATA DATABASE MANAGER
 
 
 class PollDB:
@@ -61,73 +61,33 @@ class PollDB:
 
 	
 	# initialize database
-	def initialize(self, logger:Logger) -> None:
-		try: 
-			# try to connect to database
-			logger.log("(init) <1/2>: Connecting to database... ", endline=False)
-			self._connection = apsw.Connection(self._dbpath)
-			logger.log(f"connected to {self._connection.filename}.")
-		
-		except apsw.CantOpenError as e:	# failed to initialize database
-			logger.log("error.")
-			logger.log(("Unable to open/create database file: check mountpoint exists + "
-				"permissions (Sugg. fixes: Check mountpoint defined in "
-				"/etc/catalis/global.conf and consult with your system "
-				"administrator)."), level=Logger.FATAL)
-			logger.log(e, level=Logger.TRACE)
-			
-			exit_fatal(logger)
+	def initialize(self) -> None | Exception:
+		try: self._connection = apsw.Connection(self._dbpath)		
+		except apsw.CantOpenError as e: return e # failed to initialize database
 
 
 	# write poll data to database
-	def write(self, type:str, data:str, logger:Logger) -> None:
-		logger.log(f"Writing to database... ", endline=False)
-
+	def write(self, type:str, data:str) -> None:
 		try:
 			timestamp = strftime("%s", gmtime())
 			self._connection.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?);", (timestamp, type, data))
-			logger.log("written.")
 
 		# failed to write to database
-		except apsw.ReadOnlyError as e0:
-			e = e0 # set exception to general exception
-			logger.log("error.")
-			logger.log(f"Failed while writing to database: ", level=Logger.FATAL, endline=False)
-			
+		except apsw.ReadOnlyError as e0:			
 			try: # check if can open db, if yes assume permissions error
 				test = apsw.Connection(self._connection.filename, flags=apsw.SQLITE_OPEN_READWRITE)
-				logger.log("check mounted filesytem permissions ", endline=0)
+				return e0
 				
 			except apsw.CantOpenError as e1: # otherwise, assume database deleted
-				e = e1 # make exception more specific
-				logger.log("ensure local DB has not been deleted ", endline=0)
-
-			logger.log("(Sugg. fixes: Try re-inserting the storage volume).")
-			logger.log(e, level=Logger.TRACE)
-			
-			exit_fatal(logger)
+				return e1
 
 
 # ====================================================================== POLLING
 
 
-def poll(client:ModbusClient, definition:PacketDefinition, logger:Logger) -> dict:
-	logger.log(f"Polling HMI for packet type: \"{definition.type}\"... ", endline=False)
-
-	# try until successful
-	while True:
-		try: 
-			data = {str(addr):client.read_holding_registers(addr)[0] for addr in definition.addresses}
-			logger.log(f"read {len(definition.addresses)} registers.")
-			break
-		
-		except TypeError: # if None value exists in data (ie. failed to retrieve a register)
-			logger.log("error.")
-			logger.log(f"No data received from link. Retrying in {CFG.POLL_RETRY_INTERVAL}s... ", level=Logger.ERROR, endline=False)
-
-		sleep(int(CFG.POLL_RETRY_INTERVAL))
-
-	return data
+def poll(client:ModbusClient, definition:PacketDefinition) -> dict | Exception:
+	try: return {str(addr):client.read_holding_registers(addr)[0] for addr in definition.addresses}
+	except TypeError as e: return e # if None value exists in data (ie. failed to retrieve a register)
 
 
 # ================================================================== MAIN DAEMON
@@ -155,26 +115,71 @@ def daemon() -> None:
 	logger.print(f"Mount point: {CFG.MOUNTPOINT}")
 	logger.print(f"HMI TCP/IP host address: {CFG.HMI_HOST}\n")
 
+
 	# initialize database
 	db = PollDB(hmid=hmid)
-	db.initialize(logger=logger)
+
+	logger.log("(init) <1/2>: Connecting to database... ", endline=False)
+	
+	if isinstance(e := db.initialize(), Exception):
+		logger.log("error.")
+		logger.log(("Unable to open/create database file: check mountpoint exists + "
+			"permissions (Sugg. fixes: Check mountpoint defined in "
+			"/etc/catalis/global.conf and consult with your system "
+			"administrator)."), level=Logger.FATAL)
+		logger.log(e, level=Logger.TRACE)
+		
+		exit_fatal(logger)
+
+	logger.log(f"connected to database.")
+
 
 	# initialize TCP connection
 	hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLLING_FREQUENCY)
 
 	pdef = PacketDefinition(type="report", addresses=[2000, 2001, 2002])
 
+
 	# main loop
 	pc = 1
 	while True:
 		# poll for data
-		logger.log(f"(poll~{pc}) <1/2>: ", endline=False)
-		data = poll(hmi, definition=pdef, logger=logger)
-
-		# write data to db
-		logger.log(f"(poll~{pc}) <2/2>: ", endline=False)
-		db.write(type=pdef.type, data=json.dumps(data), logger=logger)
+		logger.log(f"(poll~{pc}) <1/2>: Polling HMI for packet type: \"{pdef.type}\"... ", endline=False)
 		
+		while True:			
+			if not isinstance(data := poll(hmi, definition=pdef), Exception): 
+				logger.log(f"read {len(data)} registers.")
+				break
+			
+			# on failure, retry...
+			else:
+				logger.log("error.")
+				logger.log(f"No data received from link. Retrying in {CFG.POLL_RETRY_INTERVAL}s... ", level=Logger.ERROR, endline=False)
+
+				sleep(int(CFG.POLL_RETRY_INTERVAL))
+
+
+		# write data to database
+		logger.log(f"(poll~{pc}) <2/2>: Writing to database... ", endline=False)
+
+		if not isinstance(e := db.write(type=pdef.type, data=json.dumps(data)), Exception): 
+			logger.log("written.")
+
+		# on failure, throw fatal error...
+		else:
+			logger.log("error.")
+			logger.log(f"Failed while writing to database - ", level=Logger.FATAL, endline=False)
+
+			# get specific exception
+			if isinstance(e, apsw.ReadOnlyError): logger.log("check mounted filesytem permissions ", endline=False)
+			else: logger.log("ensure local DB has not been deleted ", endline=False)
+			
+			logger.log("(Sugg. fixes: Try re-inserting the storage volume).")
+			logger.log(e, level=Logger.TRACE)
+			
+			exit_fatal(logger)
+
+
 		pc += 1
 		sleep(int(CFG.POLLING_FREQUENCY))
 
