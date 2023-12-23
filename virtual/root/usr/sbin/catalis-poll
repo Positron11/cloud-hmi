@@ -231,14 +231,7 @@ def daemon() -> None:
 	db.initialize(logger=logger)
 
 	# initialize TCP connection
-	try:
-		hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLL_INTERVAL)
-
-	except Exception as e: # [todo) find and replace with actual exception
-		logger.log("Unable to initialize MODBUS TCP connection (Sugg. fixes: Consult with system administrator).", level=Logger.FATAL)
-		logger.log(e, level=Logger.TRACE)
-		
-		exit_fatal(logger)
+	hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLL_INTERVAL)
 
 	pdef = PacketDefinition(type="report", addresses=[2000, 2001, 2002])
 
