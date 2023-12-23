@@ -65,7 +65,7 @@ class PollDB:
 	def initialize(self, logger:Logger) -> None:
 		try: 
 			# try to connect to database
-			logger.log("Init (1/2): Connecting to database... ", endline=False)
+			logger.log("(init) <1/2>: Connecting to database... ", endline=False)
 			
 			# create db subdirectory
 			os.makedirs(self.basepath, exist_ok=True)
@@ -76,7 +76,7 @@ class PollDB:
 			logger.log(f"{'connected to' if exists else 'created'} {self.connection.filename}.")
 
 			# try to initialize database
-			logger.log("Init (2/2): Initializing database... ", endline=False)
+			logger.log("(init) <2/2>: Initializing database... ", endline=False)
 	
 			self.connection.execute("""CREATE TABLE IF NOT EXISTS polls(
 						id INTEGER PRIMARY KEY,
@@ -130,19 +130,19 @@ class PollDB:
 # ====================================================================== POLLING
 
 
-def poll(client:ModbusClient, addresses:list[str], logger:Logger) -> dict:
-	logger.log(f"Polling HMI registers... ", endline=False)
+def poll(client:ModbusClient, definition:PacketDefinition, logger:Logger) -> dict:
+	logger.log(f"Polling HMI for packet type: \"{definition.type}\"... ", endline=False)
 
 	# try until successful
 	while True:
 		try: 
-			data = {str(addr):client.read_holding_registers(addr)[0] for addr in addresses}
-			logger.log("recieved.")
+			data = {str(addr):client.read_holding_registers(addr)[0] for addr in definition.addresses}
+			logger.log(f"read {len(definition.addresses)} registers.")
 			break
 		
 		except TypeError: # if None value exists in data (ie. failed to retrieve a register)
 			logger.log("error.")
-			logger.log(f"No data received from link. Retrying in {CFG.POLL_RETRY_INTERVAL}s...", level=Logger.ERROR, endline=False)
+			logger.log(f"No data received from link. Retrying in {CFG.POLL_RETRY_INTERVAL}s... ", level=Logger.ERROR, endline=False)
 
 		sleep(int(CFG.POLL_RETRY_INTERVAL))
 
@@ -187,11 +187,11 @@ def daemon() -> None:
 	pc = 1
 	while True:
 		# poll for data
-		logger.log(f"Poll #{pc} (1/2): ", endline=False)
-		data = poll(hmi, addresses=pdef.addresses, logger=logger)
+		logger.log(f"(poll~{pc}) <1/2>: ", endline=False)
+		data = poll(hmi, definition=pdef, logger=logger)
 
 		# write data to db
-		logger.log(f"Poll #{pc} (2/2): ", endline=False)
+		logger.log(f"(poll~{pc}) <2/2>: ", endline=False)
 		db.write(type=pdef.type, data=json.dumps(data), logger=logger)
 		
 		pc += 1

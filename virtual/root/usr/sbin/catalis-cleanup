@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # wait for unmounting
-echo -n "(cleanup) [1/2] Waiting for unmount $1.."
+echo -n "(cleanup) <1/2> Waiting for unmount $1.."
 
 while mountpoint -q $1; do
 	echo -n "."
@@ -12,4 +12,4 @@ echo " DONE"
 
 # delete mountpoint
 rm -r $1
-echo "(cleanup) [2/2] Deleted mountpoint $1"
+echo "(cleanup) <2/2> Deleted mountpoint $1"
