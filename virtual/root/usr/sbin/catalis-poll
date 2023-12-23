@@ -78,7 +78,7 @@ class PollDB:
 			# try to initialize database
 			logger.log("(init) <2/2>: Initializing database... ", endline=False)
 	
-			self.connection.execute("""CREATE TABLE IF NOT EXISTS polls(
+			self.connection.execute("""CREATE TABLE IF NOT EXISTS packets (
 						id INTEGER PRIMARY KEY,
 						timestamp TEXT NOT NULL UNIQUE,
 						type TEXT NOT NULL,
@@ -104,7 +104,7 @@ class PollDB:
 
 		try:
 			timestamp = strftime("%s", gmtime())
-			self.connection.execute("INSERT INTO polls(timestamp, type, data) VALUES(?,?,?);", (timestamp, type, data))
+			self.connection.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?);", (timestamp, type, data))
 			logger.log("written.")
 
 		# failed to write to database
