@@ -61,7 +61,7 @@ class PollDB:
 
 	
 	# initialize database
-	def initialize(self) -> None | Exception:
+	def initialize(self) -> None:
 		try: self._connection = apsw.Connection(self.dbpath)		
 		except apsw.CantOpenError as e: raise e # failed to initialize database
 
@@ -85,7 +85,7 @@ class PollDB:
 # ====================================================================== POLLING
 
 
-def poll(client:ModbusClient, definition:PacketDefinition) -> dict | Exception:
+def poll(client:ModbusClient, definition:PacketDefinition) -> dict:
 	try: return {str(addr):client.read_holding_registers(addr)[0] for addr in definition.addresses}
 	except TypeError as e: raise e # if None value exists in data (ie. failed to retrieve a register)
 
