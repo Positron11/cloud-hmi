@@ -12,6 +12,7 @@ from types import FrameType
 from functools import partial
 
 from CatalisUtils.logging import Logger
+from CatalisUtils.database import CatalisDB, busy_handler
 
 import json
 from time import sleep, strftime, gmtime
@@ -76,8 +77,8 @@ def daemon() -> None:
 		try:
 			hmid = fs_label.strip(CFG.LABEL_PREFIX)
 			dbpath = os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
-			db = apsw.Connection(dbpath, flags=apsw.SQLITE_OPEN_READWRITE)
-			db.set_busy_handler(partial(db_busy_handler, logger))
+			db = CatalisDB(dbpath, flags=apsw.SQLITE_OPEN_READWRITE)
+			db._connection.set_busy_handler(partial(busy_handler, logger, int(CFG.BUSY_RETRY_INT)))
 			
 			logger.log(f"connected to {dbpath}.")
 			break
@@ -170,23 +171,21 @@ def daemon() -> None:
 					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
 				
 				# on failure, throw fatal error...
-				except apsw.ReadOnlyError as e1:
+				except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
 					logger.log("error.")
 					logger.log(f"Failed while writing to database - ", level=Logger.FATAL, endline=False)
 
-					try: # check if can open db, if yes assume permissions error
-						test = apsw.Connection(dbpath, flags=apsw.SQLITE_OPEN_READWRITE)
-						
+					if isinstance(e, apsw.ReadOnlyError): 
 						logger.log(("check mounted filesytem permissions (Sugg. "
-				  					"fixes: Re-insert the storage volume to restart "
-									"all services)."))
-						logger.log(e1, level=Logger.TRACE)
+				  					"fixes: Reinsert the storage volume to restart all services)."))
 
-					except apsw.CantOpenError as e2: 
+					elif isinstance(e, apsw.CantOpenError): 
 						logger.log(("ensure local DB has not been deleted (Sugg. "
-				  					"fixes: Re-insert the storage volume to restart "
-									"all services)."))					
-						logger.log(e2, level=Logger.TRACE)
+				  					"fixes: to prevent data loss -  DO NOT UNPLUG "
+									"USB KEY OR STOP/RESTART SERVICES UNTIL CLOUD SYNC "
+									"SERVICE HAS FAILED)."))
+					
+					logger.log(e, level=Logger.TRACE)
 					
 					exit_fatal(logger)
 
@@ -200,14 +199,6 @@ def daemon() -> None:
 
 
 # ============================================================== CUSTOM HANDLERS
-
-
-# sqlite db busy handler
-def db_busy_handler(logger:Logger, priorcalls:int):
-	logger.cap("error.")
-	logger.log(f"Database is busy - trying again in {CFG.BUSY_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
-	sleep(int(CFG.BUSY_RETRY_INT))
-	return True
 
 
 # custom clean exit handler
