@@ -125,12 +125,12 @@ def daemon() -> None:
 
 	except apsw.CantOpenError as e:
 		logger.log("error.")
-		logger.log(("Unable to open/create database file: check mountpoint exists + "
-			"permissions (Sugg. fixes: Check mountpoint defined in "
-			"/etc/catalis/global.conf and consult with your system "
-			"administrator)."), level=Logger.FATAL)
+		logger.log(("Unable to open/create database file: check mountpoint "
+			  		"exists + permissions (Sugg. fixes: Check mountpoint defined "
+					"in /etc/catalis/global.conf and consult with your system "
+					"administrator)."), level=Logger.FATAL)
 		logger.log(e, level=Logger.TRACE)
-		
+
 		exit_fatal(logger)
 
 
@@ -194,10 +194,16 @@ def daemon() -> None:
 					logger.log("error.")
 					logger.log(f"Failed while writing to database - ", level=Logger.FATAL, endline=False)
 
-					if isinstance(e, apsw.ReadOnlyError): logger.log("check mounted filesytem permissions ", endline=False)
-					elif isinstance(e, apsw.CantOpenError): logger.log("ensure local DB has not been deleted ", endline=False)			
+					if isinstance(e, apsw.ReadOnlyError): 
+						logger.log(("check mounted filesytem permissions (Sugg. "
+				  					"fixes: Try re-inserting the storage volume)."))
+
+					elif isinstance(e, apsw.CantOpenError): 
+						logger.log(("ensure local DB has not been deleted (Sugg. "
+				  					"fixes: to prevent data loss -  DO NOT UNPLUG "
+									"USB KEY OR STOP/RESTART SERVICES UNTIL SYNC "
+									"SERVICE HAS FAILED)."))
 					
-					logger.log("(Sugg. fixes: Try re-inserting the storage volume).")
 					logger.log(e, level=Logger.TRACE)
 					
 					exit_fatal(logger)

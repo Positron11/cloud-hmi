@@ -122,15 +122,18 @@ def daemon() -> None:
 
 					try: # check if can open db, if yes assume permissions error
 						test = apsw.Connection(dbpath, flags=apsw.SQLITE_OPEN_READWRITE)
-						logger.log("check mounted filesytem permissions ", endline=False)
+						
+						logger.log(("check mounted filesytem permissions (Sugg. "
+				  					"fixes: Re-insert the storage volume to restart "
+									"all services)."))
 						logger.log(e1, level=Logger.TRACE)
 
-					
 					except apsw.CantOpenError as e2: 
-						logger.log("ensure local DB has not been deleted ", endline=False)					
+						logger.log(("ensure local DB has not been deleted (Sugg. "
+				  					"fixes: Re-insert the storage volume to restart "
+									"all services)."))					
 						logger.log(e2, level=Logger.TRACE)
 					
-					logger.log("(Sugg. fixes: Re-insert the storage volume to restart all services).")
 					exit_fatal(logger)
 
 				synccount += 1
