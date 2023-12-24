@@ -37,9 +37,10 @@ sh.run(f"echo '(db init) <1/3> Connected to database at {dbpath}'", shell=True)
 # initialize polling data packet table
 db.execute("""CREATE TABLE IF NOT EXISTS packets (
 		   id INTEGER PRIMARY KEY,
-		   timestamp TEXT NOT NULL UNIQUE,
+		   timestamp TEXT NOT NULL,
 		   type TEXT NOT NULL,
-		   data TEXT NOT NULL
+		   data TEXT NOT NULL,
+		   UNIQUE(timestamp, type) ON CONFLICT IGNORE
 );""")
 
 sh.run("echo '(db init) <2/3> Initialized \"packets\" table'", shell=True)
