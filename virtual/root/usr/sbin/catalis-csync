@@ -91,7 +91,7 @@ def daemon() -> None:
 
 
 	# api setup
-	url = "https://enbsa278ls6vq.x.pipedream.net"
+	url = "https://enpc23shl3hkn.x.pipedream.net"
 	headers = {
 		"Content-Type": "application/json"
 	}
@@ -101,87 +101,81 @@ def daemon() -> None:
 	synccount = 1
 
 	while True:
-		# print visual separator
-		logger.print("---------|")
-
-		# read latest polls
+		logger.print("---------|") # print visual separator
 		logger.log(f"(sync~{synccount:03}) <1/3> Fetching latest packets from database... ", endline=False)
 		
-		while True:
-			lastsync = list(db.execute("SELECT value FROM meta WHERE type=?", ("lastsync", )))[0][0]
-			data = list(db.execute("SELECT timestamp, type, data FROM packets WHERE timestamp > ? ORDER BY timestamp ASC;", (lastsync, )))
+		# read latest polls
+		lastsync = list(db.execute("SELECT value FROM meta WHERE type=?", ("lastsync", )))[0][0]
+		data = list(db.execute("SELECT timestamp, type, data FROM packets WHERE timestamp > ? ORDER BY timestamp ASC;", (lastsync, )))
 
-			# if any new polls...
-			if data:
-				logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')} upwards.")
-				
+		# if any new polls...
+		if data:
+			logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')} upwards.")
+			logger.log(f"(sync~{synccount:03}) <2/3> POSTing data to cloud API... ", endline=False)
 
-				# send data to api endpoint
-				logger.log(f"(sync~{synccount:03}) <2/3> POSTing data to cloud API... ", endline=False)
+			# bundle data for upload
+			bundle = list()
+			for row in data:
+				bundle.append({
+					"timestamp": row[0], 
+					"type": row[1],
+					"data": json.loads(row[2])
+				})
 
-				# bundle data for upload
-				bundle = list()
-				for row in data:
-					bundle.append({
-						"timestamp": row[0], 
-						"type": row[1],
-						"data": json.loads(row[2])
-					})
-
-				while True:
-					try:
-						response = requests.post(url=url, json=json.dumps(bundle), headers=headers)
-						
-						if 200 <= response.status_code <= 299: # sucessfully posted data
-							logger.log(f"uploaded to cloud.")
-							break
+			# send data to api endpoint
+			while True:
+				try:
+					response = requests.post(url=url, json=json.dumps(bundle), headers=headers)
 					
-						else:
-							logger.cap(f"error ({response.status_code}).")
-							logger.log(f"HTTP error: {response.reason}", level=Logger.TRACE)
-							logger.log("Retrying POST request... ", endline=False)
+					if 200 <= response.status_code <= 299: # sucessfully posted data
+						logger.log(f"uploaded to cloud.")
+						break
+				
+					else:
+						logger.cap(f"error ({response.status_code}).")
+						logger.log(f"HTTP error: {response.reason}", level=Logger.TRACE)
+						logger.log("Retrying POST request... ", endline=False)
 
-					except requests.exceptions.MissingSchema as e: # fatally exit if invalid url
-						logger.cap("error.")
-						logger.log(("Invalid URL (missing scheme) supplied for API endpoint. "
-									"Check value supplied in config."), level=Logger.FATAL)
+				except requests.exceptions.MissingSchema as e: # fatally exit if invalid url
+					logger.cap("error.")
+					logger.log(("Invalid URL (missing scheme) supplied for API endpoint. "
+								"Check value supplied in config."), level=Logger.FATAL)
+					logger.log(e, level=Logger.TRACE)
+
+					exit_fatal(logger)
+					
+				except requests.exceptions.ConnectionError as e:
+					logger.cap("error.")
+
+					if "NameResolutionError" in str(e): # fatally exit if unable to resolve hostname
+						logger.log("Unable to resolve hostname. Check value supplied in config", level=Logger.FATAL)
 						logger.log(e, level=Logger.TRACE)
 
 						exit_fatal(logger)
-						
-					except requests.exceptions.ConnectionError as e:
-						logger.cap("error.")
 
-						if "NameResolutionError" in str(e): # fatally exit if unable to resolve hostname
-							logger.log("Unable to resolve hostname. Check value supplied in config", level=Logger.FATAL)
-							logger.log(e, level=Logger.TRACE)
+					elif "NewConnectionError" in str(e): # retry if connectivity outage
+						logger.log(f"Failed to connect to API. Trying again in {CFG.REQ_RETRY_INT}s...", level=Logger.Error)
+						logger.log(e, level=Logger.TRACE)
 
-							exit_fatal(logger)
+				sleep(int(CFG.REQ_RETRY_INT))
+							
 
-						elif "NewConnectionError" in str(e): # retry if connectivity outage
-							logger.log(f"Failed to connect to API. Trying again in {CFG.REQ_RETRY_INT}s...", level=Logger.Error)
-							logger.log(e, level=Logger.TRACE)
+			# set sync state to last entry's timestamp
+			try:
+				logger.log(f"(sync~{synccount:03}) <3/3> Updating sync state... ", endline=False)
+				db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][0], "lastsync" ), logger=logger)
+				logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
+			
+			# on failure, throw fatal error...
+			except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
+				exit_fatal(logger)
 
-					sleep(int(CFG.REQ_RETRY_INT))
-								
+			synccount += 1
 
-				# set sync state to last entry's timestamp
-				try:
-					logger.log(f"(sync~{synccount:03}) <3/3> Updating sync state... ", endline=False)
-					db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][0], "lastsync" ), logger=logger)
-					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
-				
-				# on failure, throw fatal error...
-				except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
-					exit_fatal(logger)
+		else:
+			logger.log("no new entries.")
 
-				synccount += 1
-
-			else:
-				logger.log("no new entries.")
-
-			sleep(int(CFG.SYNCING_FREQ))
-			break
+		sleep(int(CFG.SYNCING_FREQ))
 
 
 # ============================================================== CUSTOM HANDLERS
