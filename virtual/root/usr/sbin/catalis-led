@@ -84,6 +84,13 @@ def daemon():
 				"green": Led(20),
 				"red": Led(21)
 			}
+		},
+		{
+			"service": Service(f"catalis-csync@{identifier}"),
+			"leds": {
+				"green": Led(24),
+				"red": Led(23)
+			}
 		}
 	]
 
