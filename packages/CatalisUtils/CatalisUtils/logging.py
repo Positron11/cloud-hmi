@@ -6,11 +6,11 @@ from io import TextIOWrapper
 # catalis logger
 class Logger:
 	# log entry levels
-	FATAL 	= "[fatal]", 
-	ERROR 	= "[error]", 
-	WARN 	= "[warn]", 
-	INFO 	= "[info]", 
-	DEBUG 	= "[debug]", 
+	FATAL 	= "[fatal]"
+	ERROR 	= "[error]" 
+	WARN 	= "[warn]" 
+	INFO 	= "[info]" 
+	DEBUG 	= "[debug]" 
 	TRACE 	= "[trace]"
 
 
@@ -36,7 +36,7 @@ class Logger:
 
 
 	# print log entry to logfile
-	def log(self, string:str, level:int=3, force_newline=False, endline:bool=True) -> None:
+	def log(self, string:str, level:str=INFO, force_newline=False, endline:bool=True) -> None:
 		with open(self._logfile, "a+") as f:
 			is_newline = self.previous_line_terminated(f)
 			
