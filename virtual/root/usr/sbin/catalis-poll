@@ -31,14 +31,14 @@ apsw.bestpractice.apply((
 
 # create config object
 class CFG:
-	FSTYPE 					= os.environ.get("CATALIS_FSTYPE", 					"vfat")
-	LABEL_PREFIX 			= os.environ.get("CATALIS_LABEL_PREFIX", 			"DATA-HMI")
-	MOUNTPOINT 				= os.environ.get("CATALIS_MOUNTPOINT", 				"/srv/CatalisDATA/")
-	DB_SUBDIR 				= os.environ.get("CATALIS_DB_SUBDIR", 				"current/")
-	DB_PATTERN 				= os.environ.get("CATALIS_DB_PATTERN", 				"polldata-hmi$HMID")
-	HMI_HOST 				= os.environ.get("CATALIS_HMI_HOST", 				"192.168.1.2")
-	POLLING_FREQUENCY 		= os.environ.get("CATALIS_POLLING_FREQUENCY", 		"5")
-	POLL_RETRY_INTERVAL 	= os.environ.get("CATALIS_POLL_RETRY_INTERVAL", 	"10")
+	FSTYPE 			= os.environ.get("CATALIS_FSTYPE", 					"vfat")
+	LABEL_PREFIX 	= os.environ.get("CATALIS_LABEL_PREFIX", 			"DATA-HMI")
+	MOUNTPOINT 		= os.environ.get("CATALIS_MOUNTPOINT", 				"/srv/CatalisDATA/")
+	DB_SUBDIR 		= os.environ.get("CATALIS_DB_SUBDIR", 				"current/")
+	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 				"polldata-hmi$HMID")
+	HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 				"192.168.1.2")
+	POLLING_FREQ 	= os.environ.get("CATALIS_POLLING_FREQUENCY", 		"5")
+	POLL_RETRY_INT 	= os.environ.get("CATALIS_POLL_RETRY_INTERVAL", 	"10")
 
 
 # ================================================================= DATA PACKETS
@@ -57,11 +57,7 @@ class PacketDefinition:
 class PollDB:
 	def __init__(self, hmid:str):
 		self.dbpath =  os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
-		self._connection = None
-
-	
-	# initialize database
-	def initialize(self) -> None:
+		
 		try: self._connection = apsw.Connection(self.dbpath)		
 		except apsw.CantOpenError as e: raise e # failed to initialize database
 
@@ -83,7 +79,7 @@ class PollDB:
 
 
 # ====================================================================== POLLING
-
+ 
 
 def poll(client:ModbusClient, definition:PacketDefinition) -> dict:
 	try: return {str(addr):client.read_holding_registers(addr)[0] for addr in definition.addresses}
@@ -95,10 +91,6 @@ def poll(client:ModbusClient, definition:PacketDefinition) -> dict:
 
 # daemon
 def daemon() -> None:
-	# get filesytem label and device id
-	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
-	hmid = fs_label.strip(CFG.LABEL_PREFIX)
-
 	# initialize logger 
 	logger = Logger(logfile=f"/var/log/catalis/poll-{strftime('%d%m%Y-%H%M%S', gmtime())}.log")
 
@@ -108,7 +100,10 @@ def daemon() -> None:
 	# write to journalctl log
 	sh.run(f"echo 'Daemon started. Logging to {logger}.'", shell=True)
 
-	# initial information
+	# get filesytem label
+	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
+
+	# print logging preamble
 	logger.print(f"Welcome to the Catalis Cloud HMI Poller Daemon")
 	logger.print(f"Session date: {strftime('%F', gmtime())} (GMT)")
 	logger.print(f"Filesystem label: {fs_label}")
@@ -116,13 +111,11 @@ def daemon() -> None:
 	logger.print(f"HMI TCP/IP host address: {CFG.HMI_HOST}\n")
 
 
-	# initialize database
-	db = PollDB(hmid=hmid)
-	
+	# initialize database	
 	logger.log("(init) <1/2>: Connecting to database... ", endline=False)
 
 	try: 
-		db.initialize()
+		db = PollDB(hmid=fs_label.strip(CFG.LABEL_PREFIX))
 		logger.log(f"connected to {db.dbpath}.")
 
 	except apsw.CantOpenError:
@@ -137,16 +130,16 @@ def daemon() -> None:
 
 
 	# initialize TCP connection
-	hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLLING_FREQUENCY)
+	hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLLING_FREQ)
 
 	pdef = PacketDefinition(type="report", addresses=[2000, 2001, 2002])
 
 
 	# main loop
-	pc = 1
+	pollcount = 1
 	while True:
 		# poll for data
-		logger.log(f"(poll~{pc}) <1/2>: Polling HMI for packet type: \"{pdef.type}\"... ", endline=False)
+		logger.log(f"(poll~{pollcount}) <1/2>: Polling HMI for packet type: \"{pdef.type}\"... ", endline=False)
 		
 		while True:			
 			try:
@@ -154,20 +147,22 @@ def daemon() -> None:
 				logger.log(f"read {len(data)} registers.")
 				break
 			
-			# on failure, retry...
-			except TypeError:
+			except TypeError: # on failure, retry...
 				logger.log("error.")
-				logger.log(f"No data received from link. Retrying in {CFG.POLL_RETRY_INTERVAL}s... ", level=Logger.ERROR, endline=False)
+				logger.log(f"No data received from link. Retrying in {CFG.POLL_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
 
-				sleep(int(CFG.POLL_RETRY_INTERVAL))
+				sleep(int(CFG.POLL_RETRY_INT))
 
 
 		# write data to database
-		logger.log(f"(poll~{pc}) <2/2>: Writing to database... ", endline=False)
+		logger.log(f"(poll~{pollcount}) <2/2>: Writing to database... ", endline=False)
 
 		try: 
 			db.write(type=pdef.type, data=json.dumps(data))
 			logger.log("written.")
+
+			pollcount += 1
+			sleep(int(CFG.POLLING_FREQ))
 
 		# on failure, throw fatal error...
 		except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
@@ -181,10 +176,6 @@ def daemon() -> None:
 			logger.log(e, level=Logger.TRACE)
 			
 			exit_fatal(logger)
-
-
-		pc += 1
-		sleep(int(CFG.POLLING_FREQUENCY))
 
 
 # ================================================================ EXIT HANDLERS

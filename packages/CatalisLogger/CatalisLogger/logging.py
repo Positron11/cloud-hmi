@@ -6,8 +6,12 @@ from io import TextIOWrapper
 # catalis logger
 class Logger:
 	# log entry levels
-	FATAL, ERROR, WARN, INFO, DEBUG, TRACE, DEFAULT = range(7)
-	levels = ["[fatal] ", "[error] ", "[warn] ", "[info] ", "[debug] ", "[trace] ", ""]
+	FATAL 	= "[fatal]", 
+	ERROR 	= "[error]", 
+	WARN 	= "[warn]", 
+	INFO 	= "[info]", 
+	DEBUG 	= "[debug]", 
+	TRACE 	= "[trace]"
 
 
 	# constructor
@@ -20,24 +24,24 @@ class Logger:
 		return self._logfile
 
 
-	# check if the last line in the log is terminated
+	# check if the previous line in the log is terminated
 	def previous_line_terminated(self, file:TextIOWrapper) -> bool:
 		# get last char (if possible) to check if previous entry terminated
 		try: 
 			file.seek(file.tell() - 1, os.SEEK_SET)
-			return file.read(1) in ["\n", ""]
+			return file.read(1) is "\n"
 		
 		except ValueError: # beginning of file 
 			return True
 
 
-	# logging function
+	# print log entry to logfile
 	def log(self, string:str, level:int=3, force_newline=False, endline:bool=True) -> None:
 		with open(self._logfile, "a+") as f:
 			is_newline = self.previous_line_terminated(f)
 			
 			# prepend timestamp and level if last char newline (ie. this is a new entry)
-			if force_newline or is_newline: out = f"""{strftime("%T", gmtime())} | {self.levels[level]}{string}"""
+			if force_newline or is_newline: out = f"""{strftime("%T", gmtime())} | {self.levels[level]} {string}"""
 			else: out = f"""{string}"""
 			
 			# append newline if log entry is completed, prepend if specified

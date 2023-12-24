@@ -30,15 +30,15 @@ apsw.bestpractice.apply((
 
 # create config object
 class CFG:
-	FSTYPE 					= os.environ.get("CATALIS_FSTYPE", 							"vfat")
-	LABEL_PREFIX 			= os.environ.get("CATALIS_LABEL_PREFIX", 					"DATA-HMI")
-	MOUNTPOINT 				= os.environ.get("CATALIS_MOUNTPOINT", 						"/srv/CatalisDATA/")
-	DB_SUBDIR 				= os.environ.get("CATALIS_DB_SUBDIR", 						"current/")
-	DB_PATTERN 				= os.environ.get("CATALIS_DB_PATTERN", 						"polldata-hmi$HMID")
-	HMI_HOST 				= os.environ.get("CATALIS_HMI_HOST", 						"192.168.1.2")
-	SYNCING_FREQUENCY 		= os.environ.get("CATALIS_SYNCING_FREQUENCY", 				"30")
-	CONNECT_RETRY_INTERVAL 	= os.environ.get("CATALIS_SYNC_DB_CONNECT_RETRY_INTERVAL", 	"60")
-	BUSY_RETRY_INTERVAL 	= os.environ.get("CATALIS_SYNC_DB_BUSY_RETRY_INTERVAL", 	"10")
+	FSTYPE 			= os.environ.get("CATALIS_FSTYPE", 							"vfat")
+	LABEL_PREFIX 	= os.environ.get("CATALIS_LABEL_PREFIX", 					"DATA-HMI")
+	MOUNTPOINT 		= os.environ.get("CATALIS_MOUNTPOINT", 						"/srv/CatalisDATA/")
+	DB_SUBDIR 		= os.environ.get("CATALIS_DB_SUBDIR", 						"current/")
+	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 						"polldata-hmi$HMID")
+	HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 						"192.168.1.2")
+	SYNCING_FREQ 	= os.environ.get("CATALIS_SYNCING_FREQUENCY", 				"30")
+	CONN_RETRY_INT 	= os.environ.get("CATALIS_SYNC_DB_CONNECT_RETRY_INTERVAL", 	"60")
+	BUSY_RETRY_INT 	= os.environ.get("CATALIS_SYNC_DB_BUSY_RETRY_INTERVAL", 	"10")
 
 
 # ================================================================== MAIN DAEMON
@@ -46,11 +46,6 @@ class CFG:
 
 # daemon
 def daemon() -> None:
-	# get device id and database path
-	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
-	hmid = fs_label.strip(CFG.LABEL_PREFIX)
-	dbpath = os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
-
 	# initialize logger 
 	logger = Logger(logfile=f"/var/log/catalis/csync-{strftime('%d%m%Y-%H%M%S', gmtime())}.log")
 
@@ -59,6 +54,9 @@ def daemon() -> None:
 
 	# write to journalctl log
 	sh.run(f"echo 'Daemon started. Logging to {logger}.'", shell=True)
+
+	# get filesystem label
+	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
 
 	# initial information
 	logger.print(f"Welcome to the Catalis Cloud HMI Poller Daemon")
@@ -72,20 +70,25 @@ def daemon() -> None:
 
 	while True:
 		try:
+			hmid = fs_label.strip(CFG.LABEL_PREFIX)
+			dbpath = os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
+
 			db = apsw.Connection(dbpath, flags=apsw.SQLITE_OPEN_READWRITE)
+			
 			logger.log(f"connected to {dbpath}.")
 			break
 		
 		except apsw.CantOpenError:
 			logger.log("error.")
-			logger.log(f"Error opening database. Trying again in {CFG.CONNECT_RETRY_INTERVAL}s...", level=Logger.ERROR, endline=False)
+			logger.log(f"Error opening database. Trying again in {CFG.CONN_RETRY_INT}s...", level=Logger.ERROR, endline=False)
 
-			sleep(int(CFG.CONNECT_RETRY_INTERVAL))
+			sleep(int(CFG.CONN_RETRY_INT))
 
 	# main upload loop
+	synccount = 1
 	while True:
 		# read latest polls
-		logger.log("(sync) <1/2> Fetching latest packets from database... ", endline=False)
+		logger.log(f"(sync~{synccount}) <1/2> Fetching latest packets from database... ", endline=False)
 		
 		while True:
 			try:
@@ -101,22 +104,24 @@ def daemon() -> None:
 						logger.print(row)
 
 					# set sync state to last entry's timestamp
-					logger.log("(sync) <2/2> Updating sync state... ", endline=False)
+					logger.log(f"(sync~{synccount}) <2/2> Updating sync state... ", endline=False)
 					db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][1], "lastsync" ))
 					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
+
+					synccount += 1
 
 				else:
 					logger.log("no new entries.")
 
-				sleep(int(CFG.SYNCING_FREQUENCY))
+				sleep(int(CFG.SYNCING_FREQ))
 				break
 			
 			# database busy
 			except apsw.BusyError:
 				logger.log("error.")
-				logger.log(f"Database is busy - trying again in {CFG.BUSY_RETRY_INTERVAL}s... ", level=Logger.ERROR, endline=False)
+				logger.log(f"Database is busy - trying again in {CFG.BUSY_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
 
-				sleep(int(CFG.BUSY_RETRY_INTERVAL))
+				sleep(int(CFG.BUSY_RETRY_INT))
 
 
 
