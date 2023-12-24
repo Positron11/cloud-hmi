@@ -91,7 +91,7 @@ def daemon() -> None:
 
 
 	# api setup
-	url = "https://eoeq8svlogui73.m.pipedream.net/"
+	url = "https://enbsa278ls6vq.x.pipedream.net"
 	headers = {
 		"Content-Type": "application/json"
 	}
@@ -117,7 +117,7 @@ def daemon() -> None:
 				
 
 				# send data to api endpoint
-				logger.log(f"(sync~{synccount:03}) <2/3> POST-ing data to cloud API... ", endline=False)
+				logger.log(f"(sync~{synccount:03}) <2/3> POSTing data to cloud API... ", endline=False)
 
 				# bundle data for upload
 				bundle = list()
@@ -139,6 +139,7 @@ def daemon() -> None:
 						else:
 							logger.cap(f"error ({response.status_code}).")
 							logger.log(f"HTTP error: {response.reason}", level=Logger.TRACE)
+							logger.log("Retrying POST request... ", endline=False)
 
 					except requests.exceptions.MissingSchema as e: # fatally exit if invalid url
 						logger.cap("error.")
@@ -167,26 +168,11 @@ def daemon() -> None:
 				# set sync state to last entry's timestamp
 				try:
 					logger.log(f"(sync~{synccount:03}) <3/3> Updating sync state... ", endline=False)
-					db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][0], "lastsync" ))
+					db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][0], "lastsync" ), logger=logger)
 					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
 				
 				# on failure, throw fatal error...
 				except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
-					logger.log("error.")
-					logger.log(f"Failed while writing to database - ", level=Logger.FATAL, endline=False)
-
-					if isinstance(e, apsw.ReadOnlyError): 
-						logger.log(("check mounted filesytem permissions (Sugg. "
-				  					"fixes: Reinsert the storage volume to restart all services)."))
-
-					elif isinstance(e, apsw.CantOpenError): 
-						logger.log(("ensure local DB has not been deleted (Sugg. "
-				  					"fixes: to prevent data loss -  DO NOT UNPLUG "
-									"USB KEY OR STOP/RESTART SERVICES UNTIL CLOUD SYNC "
-									"SERVICE HAS FAILED)."))
-					
-					logger.log(e, level=Logger.TRACE)
-					
 					exit_fatal(logger)
 
 				synccount += 1

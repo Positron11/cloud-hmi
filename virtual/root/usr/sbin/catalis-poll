@@ -142,6 +142,7 @@ def daemon() -> None:
 					logger.print("---------|")
 					groupstart = True
 
+
 				# poll for data
 				logger.log(f"(poll~g{groupcount:03}) <1/2>: Polling HMI for packet type: \"{packet.type}\"... ", endline=False)
 				
@@ -163,28 +164,14 @@ def daemon() -> None:
 
 				try: 
 					timestamp = strftime("%s", gmtime())
-					db.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?);", (timestamp, packet.type, json.dumps(data)))
+					db.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?);", (timestamp, packet.type, json.dumps(data)), logger=logger)
 					logger.log("written.")
 					packet.lastpolled = pollstart
 
 				# on failure, throw fatal error...
 				except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
-					logger.log("error.")
-					logger.log(f"Failed while writing to database - ", level=Logger.FATAL, endline=False)
-
-					if isinstance(e, apsw.ReadOnlyError): 
-						logger.log(("check mounted filesytem permissions (Sugg. "
-				  					"fixes: Reinsert the storage volume to restart all services)."))
-
-					elif isinstance(e, apsw.CantOpenError): 
-						logger.log(("ensure local DB has not been deleted (Sugg. "
-				  					"fixes: to prevent data loss -  DO NOT UNPLUG "
-									"USB KEY OR STOP/RESTART SERVICES UNTIL CLOUD SYNC "
-									"SERVICE HAS FAILED)."))
-					
-					logger.log(e, level=Logger.TRACE)
-					
 					exit_fatal(logger)
+
 
 		# increment pollgroup count
 		if groupstart: 

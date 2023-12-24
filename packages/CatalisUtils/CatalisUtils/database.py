@@ -45,17 +45,35 @@ class CatalisDB():
 
 
 	# error-handling wrapper for execute
-	def execute(self, query:str, bindings:tuple[str]=()) -> apsw.Cursor:
+	def execute(self, query:str, bindings:tuple[str]=(), logger:Logger=None) -> apsw.Cursor:
 		try:
 			return self._connection.execute(query, bindings)
 		
 		# failed to write to database
-		except apsw.ReadOnlyError as e0:			
+		except apsw.ReadOnlyError as e0:		
+			if logger: 
+				logger.cap("error.")
+				logger.log(f"Failed while writing to database - ", level=Logger.FATAL, endline=False)
+				
 			try: # check if can open db, if yes assume permissions error
 				test = apsw.Connection(self._connection.filename, flags=apsw.SQLITE_OPEN_READWRITE)
+				
+				if logger: 
+					logger.log(("check mounted filesytem permissions (Sugg. "
+				 				"fixes: Reinsert the storage volume to restart "
+								"all services)."))
+					logger.log(e0, level=Logger.TRACE)
+				
 				raise e0
 				
 			except apsw.CantOpenError as e1: # otherwise, assume database deleted
+				if logger: 
+					logger.log(("local DB may have been deleted (Sugg. "
+								"fixes: to prevent data loss -  DO NOT UNPLUG "
+								"USB KEY OR STOP/RESTART SERVICES UNTIL CLOUD "
+								"SYNC SERVICE HAS FAILED)."))
+					logger.log(e1, level=Logger.TRACE)
+				
 				raise e1
 
 

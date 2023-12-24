@@ -4,6 +4,8 @@ import os
 import sys
 import subprocess as sh
 
+from CatalisUtils.database import CatalisDB
+
 import apsw, apsw.bestpractice
 
 # initialize apsw
@@ -29,30 +31,7 @@ os.makedirs(basepath, exist_ok=True)
 # initialize connection
 hmid = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1").strip(CFG.LABEL_PREFIX)
 dbpath =  os.path.join(basepath, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
-db = apsw.Connection(dbpath)
+db = CatalisDB(dbpath)
 
-sh.run(f"echo '(db init) <1/3> Connected to database at {dbpath}'", shell=True)
-
-
-# initialize polling data packet table
-db.execute("""CREATE TABLE IF NOT EXISTS packets (
-		   id INTEGER PRIMARY KEY,
-		   timestamp TEXT NOT NULL,
-		   type TEXT NOT NULL,
-		   data TEXT NOT NULL,
-		   UNIQUE(timestamp, type) ON CONFLICT IGNORE
-);""")
-
-sh.run("echo '(db init) <2/3> Initialized \"packets\" table'", shell=True)
-
-
-# initialize metadata table
-db.execute("""CREATE TABLE IF NOT EXISTS meta (
-		   id INTEGER PRIMARY KEY,
-		   type TEXT NOT NULL UNIQUE,
-		   value TEXT
-);""")
-
-db.execute("INSERT OR IGNORE INTO meta (type, value) VALUES (?,?)", ("lastsync", "0"))
-
-sh.run("echo '(db init) <3/3> Initialized \"meta\" table'", shell=True)
+# initialize database
+db.initialize()
