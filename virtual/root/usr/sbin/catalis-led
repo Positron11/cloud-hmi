@@ -89,6 +89,9 @@ def daemon():
 		}
 	]
 
+	# reset failed states
+	sh.run("systemctl reset-failed", shell=True)
+
 	try:
 		while True:
 			for service in mapping:
