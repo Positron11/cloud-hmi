@@ -67,24 +67,17 @@ def daemon():
 			}
 		},
 		{
-			"service": Service(f"catalis-mount@{identifier}"),
+			"service": Service(f"catalis-poll@{identifier}"),
 			"leds": {
 				"green": Led(19),
 				"red": Led(26)
 			}
 		},
 		{
-			"service": Service(f"catalis-poll@{identifier}"),
+			"service": Service(f"catalis-csync@{identifier}"),
 			"leds": {
 				"green": Led(20),
 				"red": Led(21)
-			}
-		},
-		{
-			"service": Service(f"catalis-csync@{identifier}"),
-			"leds": {
-				"green": Led(24),
-				"red": Led(23)
 			}
 		}
 	]
