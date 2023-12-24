@@ -36,9 +36,9 @@ class CFG:
 	DB_SUBDIR 		= os.environ.get("CATALIS_DB_SUBDIR", 						"current/")
 	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 						"polldata-hmi$HMID")
 	HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 						"192.168.1.2")
+	BUSY_RETRY_INT 	= os.environ.get("CATALIS_DB_BUSY_RETRY_INTERVAL", 			"10")
 	SYNCING_FREQ 	= os.environ.get("CATALIS_SYNCING_FREQUENCY", 				"30")
 	CONN_RETRY_INT 	= os.environ.get("CATALIS_SYNC_DB_CONNECT_RETRY_INTERVAL", 	"60")
-	BUSY_RETRY_INT 	= os.environ.get("CATALIS_SYNC_DB_BUSY_RETRY_INTERVAL", 	"10")
 
 
 # ================================================================== MAIN DAEMON
@@ -65,8 +65,9 @@ def daemon() -> None:
 	logger.print(f"Mount point: {CFG.MOUNTPOINT}")
 	logger.print(f"HMI TCP/IP host address: {CFG.HMI_HOST}\n")
 
-	# attempt to open database
-	logger.log("(init) <1/1> Connecting to database in Read Only mode... ", endline=False)
+
+	# initialize database connection
+	logger.log("(init) <1/1> Initializing database connection Read-Write mode... ", endline=False)
 
 	while True:
 		try:
@@ -74,15 +75,17 @@ def daemon() -> None:
 			dbpath = os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
 
 			db = apsw.Connection(dbpath, flags=apsw.SQLITE_OPEN_READWRITE)
+			db.set_busy_handler(partial(db_busy_handler, logger))
 			
 			logger.log(f"connected to {dbpath}.")
 			break
 		
 		except apsw.CantOpenError:
 			logger.log("error.")
-			logger.log(f"Error opening database. Trying again in {CFG.CONN_RETRY_INT}s...", level=Logger.ERROR, endline=False)
+			logger.log(f"Error initializing database connection. Trying again in {CFG.CONN_RETRY_INT}s...", level=Logger.ERROR, endline=False)
 
 			sleep(int(CFG.CONN_RETRY_INT))
+
 
 	# main upload loop
 	synccount = 1
@@ -95,41 +98,39 @@ def daemon() -> None:
 		logger.log(f"(sync~{synccount:03}) <1/2> Fetching latest packets from database... ", endline=False)
 		
 		while True:
-			try:
-				lastsync = list(db.execute("SELECT value FROM meta WHERE type=?", ("lastsync", )))[0][0]
-				data = list(db.execute("SELECT * FROM packets WHERE timestamp > ? ORDER BY timestamp ASC;", (lastsync, )))
+			lastsync = list(db.execute("SELECT value FROM meta WHERE type=?", ("lastsync", )))[0][0]
+			data = list(db.execute("SELECT * FROM packets WHERE timestamp > ? ORDER BY timestamp ASC;", (lastsync, )))
 
-				# if any new polls...
-				if data:
-					logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')} upwards.")
-					
-					# do stuff
-					# for row in data:
-					# 	logger.print(row)
+			# if any new polls...
+			if data:
+				logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')} upwards.")
+				
+				# do stuff
+				# for row in data:
+				# 	logger.print(row)
 
-					# set sync state to last entry's timestamp
-					logger.log(f"(sync~{synccount:03}) <2/2> Updating sync state... ", endline=False)
-					db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][1], "lastsync" ))
-					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
+				# set sync state to last entry's timestamp
+				logger.log(f"(sync~{synccount:03}) <2/2> Updating sync state... ", endline=False)
+				db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][1], "lastsync" ))
+				logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
 
-					synccount += 1
+				synccount += 1
 
-				else:
-					logger.log("no new entries.")
+			else:
+				logger.log("no new entries.")
 
-				sleep(int(CFG.SYNCING_FREQ))
-				break
-			
-			# database busy
-			except apsw.BusyError:
-				logger.log("error.")
-				logger.log(f"Database is busy - trying again in {CFG.BUSY_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
-
-				sleep(int(CFG.BUSY_RETRY_INT))
+			sleep(int(CFG.SYNCING_FREQ))
+			break
 
 
+# ============================================================== CUSTOM HANDLERS
 
-# ================================================================ EXIT HANDLERS
+
+# sqlite db busy handler
+def db_busy_handler(logger:Logger, priorcalls:int):
+	logger.log(f"Database is busy - trying again in {CFG.BUSY_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
+	sleep(int(CFG.BUSY_RETRY_INT))
+	return True
 
 
 # custom clean exit handler

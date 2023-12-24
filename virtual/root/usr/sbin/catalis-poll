@@ -38,6 +38,7 @@ class CFG:
 	DB_SUBDIR 		= os.environ.get("CATALIS_DB_SUBDIR", 				"current/")
 	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 				"polldata-hmi$HMID")
 	HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 				"192.168.1.2")
+	BUSY_RETRY_INT 	= os.environ.get("CATALIS_DB_BUSY_RETRY_INTERVAL", 	"10")
 	POLLING_FREQ 	= os.environ.get("CATALIS_POLLING_FREQUENCY", 		"5")
 	POLL_RETRY_INT 	= os.environ.get("CATALIS_POLL_RETRY_INTERVAL", 	"10")
 
@@ -114,14 +115,15 @@ def daemon() -> None:
 	logger.print(f"HMI TCP/IP host address: {CFG.HMI_HOST}\n")
 
 
-	# initialize database	
+	# initialize database connection
 	logger.log("(init) <1/2>: Connecting to database... ", endline=False)
 
 	try: 
 		db = PollDB(hmid=fs_label.strip(CFG.LABEL_PREFIX))
+		db._connection.set_busy_handler(partial(db_busy_handler, logger))
 		logger.log(f"connected to {db.dbpath}.")
 
-	except apsw.CantOpenError:
+	except apsw.CantOpenError as e:
 		logger.log("error.")
 		logger.log(("Unable to open/create database file: check mountpoint exists + "
 			"permissions (Sugg. fixes: Check mountpoint defined in "
@@ -209,6 +211,13 @@ def daemon() -> None:
 
 
 # ================================================================ EXIT HANDLERS
+
+
+# sqlite db busy handler
+def db_busy_handler(logger:Logger, priorcalls:int):
+	logger.log(f"Database is busy - trying again in {CFG.BUSY_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
+	sleep(int(CFG.BUSY_RETRY_INT))
+	return True
 
 
 # custom clean exit handler
