@@ -13,9 +13,10 @@ from functools import partial
 from CatalisLogger.logging import Logger
 
 import json
-from time import sleep, strftime, gmtime
+from time import sleep, strftime, gmtime, time
 import apsw, apsw.bestpractice
 from pyModbusTCP.client import ModbusClient
+from configparser import RawConfigParser
 
 
 # initialize apsw
@@ -45,17 +46,19 @@ class CFG:
 
 
 # data packet definition class
-class PacketDefinition:
-	def __init__(self, type:str, addresses:list[str]):
+class PacketDefinition():
+	def __init__(self, type:str, frequency:int, addresses:list[int]) -> None:
 		self.type = type
+		self.frequency = frequency
 		self.addresses = addresses
+		self.lastpolled = -1 # poll immediately at startup
 
 
 # =================================================== POLL DATA DATABASE MANAGER
 
 
 class PollDB:
-	def __init__(self, hmid:str):
+	def __init__(self, hmid:str) -> None:
 		self.dbpath =  os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
 		
 		try: self._connection = apsw.Connection(self.dbpath)		
@@ -81,8 +84,8 @@ class PollDB:
 # ====================================================================== POLLING
  
 
-def poll(client:ModbusClient, definition:PacketDefinition) -> dict:
-	try: return {str(addr):client.read_holding_registers(addr)[0] for addr in definition.addresses}
+def poll(client:ModbusClient, addresses:list[int]) -> dict:
+	try: return {str(addr):client.read_holding_registers(addr)[0] for addr in addresses}
 	except TypeError as e: raise e # if None value exists in data (ie. failed to retrieve a register)
 
 
@@ -132,50 +135,77 @@ def daemon() -> None:
 	# initialize TCP connection
 	hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLLING_FREQ)
 
-	pdef = PacketDefinition(type="report", addresses=[2000, 2001, 2002])
+
+	# load packet definitions
+	parser = RawConfigParser()
+	parser.read("/etc/catalis/packet.conf")
+	
+	packet_defs = [
+		PacketDefinition(
+			type=definition,
+			frequency=int(parser.get(definition, "Frequency")),
+			addresses=[int(x) for x in parser.get(definition, "Addresses").split(",")]
+		) 
+		for definition in parser.sections()
+	]
 
 
 	# main loop
-	pollcount = 1
+	groupcount = 1
+	groupstart = False
+	
 	while True:
-		# poll for data
-		logger.log(f"(poll~{pollcount}) <1/2>: Polling HMI for packet type: \"{pdef.type}\"... ", endline=False)
-		
-		while True:			
-			try:
-				data = poll(hmi, definition=pdef)
-				logger.log(f"read {len(data)} registers.")
-				break
-			
-			except TypeError: # on failure, retry...
-				logger.log("error.")
-				logger.log(f"No data received from link. Retrying in {CFG.POLL_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
+		for packet in packet_defs:
+			if (pollstart := int(time())) - packet.lastpolled > packet.frequency:
+				# print visual separator
+				if not groupstart: 
+					logger.print("---------|")
+					groupstart = True
 
-				sleep(int(CFG.POLL_RETRY_INT))
+				# poll for data
+				logger.log(f"(poll~g{groupcount:03}) <1/2>: Polling HMI for packet type: \"{packet.type}\"... ", endline=False)
+				
+				while True:			
+					try:
+						data = poll(hmi, addresses=packet.addresses)
+						logger.log(f"read {len(data)} registers.")
+						break
+					
+					except TypeError: # on failure, retry...
+						logger.log("error.")
+						logger.log(f"No data received from link. Retrying in {CFG.POLL_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
+
+						sleep(int(CFG.POLL_RETRY_INT))
 
 
-		# write data to database
-		logger.log(f"(poll~{pollcount}) <2/2>: Writing to database... ", endline=False)
+				# write data to database
+				logger.log(f"(poll~g{groupcount:03}) <2/2>: Writing to database... ", endline=False)
 
-		try: 
-			db.write(type=pdef.type, data=json.dumps(data))
-			logger.log("written.")
+				try: 
+					db.write(type=packet.type, data=json.dumps(data))
+					logger.log("written.")
 
-			pollcount += 1
-			sleep(int(CFG.POLLING_FREQ))
+					packet.lastpolled = pollstart
 
-		# on failure, throw fatal error...
-		except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
-			logger.log("error.")
-			logger.log(f"Failed while writing to database - ", level=Logger.FATAL, endline=False)
+				# on failure, throw fatal error...
+				except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
+					logger.log("error.")
+					logger.log(f"Failed while writing to database - ", level=Logger.FATAL, endline=False)
 
-			if isinstance(e, apsw.ReadOnlyError): logger.log("check mounted filesytem permissions ", endline=False)
-			elif isinstance(e, apsw.CantOpenError): logger.log("ensure local DB has not been deleted ", endline=False)			
-			
-			logger.log("(Sugg. fixes: Try re-inserting the storage volume).")
-			logger.log(e, level=Logger.TRACE)
-			
-			exit_fatal(logger)
+					if isinstance(e, apsw.ReadOnlyError): logger.log("check mounted filesytem permissions ", endline=False)
+					elif isinstance(e, apsw.CantOpenError): logger.log("ensure local DB has not been deleted ", endline=False)			
+					
+					logger.log("(Sugg. fixes: Try re-inserting the storage volume).")
+					logger.log(e, level=Logger.TRACE)
+					
+					exit_fatal(logger)
+
+		# increment pollgroup count
+		if groupstart: 
+			groupcount += 1
+			groupstart = False
+
+		sleep(int(CFG.POLLING_FREQ))
 
 
 # ================================================================ EXIT HANDLERS

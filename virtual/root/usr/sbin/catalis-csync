@@ -86,9 +86,13 @@ def daemon() -> None:
 
 	# main upload loop
 	synccount = 1
+
 	while True:
+		# print visual separator
+		logger.print("---------|")
+
 		# read latest polls
-		logger.log(f"(sync~{synccount}) <1/2> Fetching latest packets from database... ", endline=False)
+		logger.log(f"(sync~{synccount:03}) <1/2> Fetching latest packets from database... ", endline=False)
 		
 		while True:
 			try:
@@ -100,11 +104,11 @@ def daemon() -> None:
 					logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')} upwards.")
 					
 					# do stuff
-					for row in data:
-						logger.print(row)
+					# for row in data:
+					# 	logger.print(row)
 
 					# set sync state to last entry's timestamp
-					logger.log(f"(sync~{synccount}) <2/2> Updating sync state... ", endline=False)
+					logger.log(f"(sync~{synccount:03}) <2/2> Updating sync state... ", endline=False)
 					db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][1], "lastsync" ))
 					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
 
