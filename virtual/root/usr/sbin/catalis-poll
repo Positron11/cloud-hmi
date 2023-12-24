@@ -215,6 +215,7 @@ def daemon() -> None:
 
 # sqlite db busy handler
 def db_busy_handler(logger:Logger, priorcalls:int):
+	logger.cap("error.")
 	logger.log(f"Database is busy - trying again in {CFG.BUSY_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
 	sleep(int(CFG.BUSY_RETRY_INT))
 	return True

@@ -48,6 +48,13 @@ class Logger:
 			if force_newline and not is_newline: out = "\n" + out
 			print(out, end="\n" if endline else "", file=f)
 
+	
+	# cap previous unterminated log line
+	def cap(self, string:str):
+		with open(self._logfile, "a+") as f:
+			if not self.previous_line_terminated(f):
+				print(f"""{string}""", file=f)
+
 
 	# plain print to logfile
 	def print(self, string:str):
