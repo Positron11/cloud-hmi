@@ -2,6 +2,7 @@
 Description=Catalis Cloud HMI polling data storage volume mounting service
 Requires=catalis-mount@%i.service
 After=catalis-mount@%i.service
+PartOf=catalis-poll@%i.service
 
 [Service]
 Type=oneshot
