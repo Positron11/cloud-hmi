@@ -80,11 +80,11 @@ def daemon() -> None:
 			db = CatalisDB(dbpath, flags=apsw.SQLITE_OPEN_READWRITE)
 			db._connection.set_busy_handler(partial(busy_handler, logger, int(CFG.BUSY_RETRY_INT)))
 			
-			logger.log(f"connected to {dbpath}.")
+			logger.cap(f"connected to {dbpath}.")
 			break
 		
 		except apsw.CantOpenError:
-			logger.log("error.")
+			logger.cap("error.")
 			logger.log(f"Error initializing database connection. Trying again in {CFG.CONN_RETRY_INT}s...", level=Logger.ERROR, endline=False)
 
 			sleep(int(CFG.CONN_RETRY_INT))

@@ -102,7 +102,7 @@ def daemon() -> None:
 		logger.log(f"connected to {db._connection.db_filename}.")
 
 	except apsw.CantOpenError as e:
-		logger.log("error.")
+		logger.cap("error.")
 		logger.log(("Unable to open/create database file: check mountpoint "
 			  		"exists + permissions (Sugg. fixes: Check mountpoint defined "
 					"in /etc/catalis/global.conf and consult with your system "
@@ -149,11 +149,11 @@ def daemon() -> None:
 				while True:			
 					try:
 						data = poll(hmi, addresses=packet.addresses)
-						logger.log(f"read {len(data)} registers.")
+						logger.cap(f"read {len(data)} registers.")
 						break
 					
 					except TypeError: # on failure, retry...
-						logger.log("error.")
+						logger.cap("error.")
 						logger.log(f"No data received from link. Retrying in {CFG.POLL_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
 
 						sleep(int(CFG.POLL_RETRY_INT))
@@ -165,7 +165,7 @@ def daemon() -> None:
 				try: 
 					timestamp = strftime("%s", gmtime())
 					db.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?);", (timestamp, packet.type, json.dumps(data)), logger=logger)
-					logger.log("written.")
+					logger.cap("written.")
 					packet.lastpolled = pollstart
 
 				# on failure, throw fatal error...
