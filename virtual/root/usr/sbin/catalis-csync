@@ -110,9 +110,28 @@ def daemon() -> None:
 				# 	logger.print(row)
 
 				# set sync state to last entry's timestamp
-				logger.log(f"(sync~{synccount:03}) <2/2> Updating sync state... ", endline=False)
-				db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][1], "lastsync" ))
-				logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
+				try:
+					logger.log(f"(sync~{synccount:03}) <2/2> Updating sync state... ", endline=False)
+					db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][1], "lastsync" ))
+					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
+				
+				# on failure, throw fatal error...
+				except apsw.ReadOnlyError as e1:
+					logger.log("error.")
+					logger.log(f"Failed while writing to database - ", level=Logger.FATAL, endline=False)
+
+					try: # check if can open db, if yes assume permissions error
+						test = apsw.Connection(dbpath, flags=apsw.SQLITE_OPEN_READWRITE)
+						logger.log("check mounted filesytem permissions ", endline=False)
+						logger.log(e1, level=Logger.TRACE)
+
+					
+					except apsw.CantOpenError as e2: 
+						logger.log("ensure local DB has not been deleted ", endline=False)					
+						logger.log(e2, level=Logger.TRACE)
+					
+					logger.log("(Sugg. fixes: Re-insert the storage volume to restart all services).")
+					exit_fatal(logger)
 
 				synccount += 1
 
