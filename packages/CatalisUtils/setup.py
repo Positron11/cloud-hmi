@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 setup(
-	name="Catalis Logger",
-	version="0.1.1",
-	description="Logfile creation and management utility for Catalis Systemd daemon services.",
+	name="CatalisUtils",
+	version="0.1.3",
+	description="Logfile creation and management utility for Catalis CloudHMI daemon services.",
 	author="Aarush Kumbhakern",
 	license="MIT",
 	packages=find_packages(),

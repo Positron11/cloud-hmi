@@ -11,7 +11,7 @@ from datetime import datetime
 from types import FrameType
 from functools import partial
 
-from CatalisLogger.logging import Logger
+from CatalisUtils.logging import Logger
 
 from time import sleep, strftime, gmtime
 import apsw, apsw.bestpractice

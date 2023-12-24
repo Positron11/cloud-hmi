@@ -10,7 +10,7 @@ import subprocess as sh
 from types import FrameType
 from functools import partial
 
-from CatalisLogger.logging import Logger
+from CatalisUtils.logging import Logger
 
 import json
 from time import sleep, strftime, gmtime, time

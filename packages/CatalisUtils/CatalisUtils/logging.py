@@ -41,7 +41,7 @@ class Logger:
 			is_newline = self.previous_line_terminated(f)
 			
 			# prepend timestamp and level if last char newline (ie. this is a new entry)
-			if force_newline or is_newline: out = f"""{strftime("%T", gmtime())} | {self.levels[level]} {string}"""
+			if force_newline or is_newline: out = f"""{strftime("%T", gmtime())} | {level} {string}"""
 			else: out = f"""{string}"""
 			
 			# append newline if log entry is completed, prepend if specified
