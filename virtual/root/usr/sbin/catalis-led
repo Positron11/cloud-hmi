@@ -51,11 +51,6 @@ class Service():
 def daemon():
 	identifier = sys.argv[1]
 
-	leds = { 
-		"g1": Led(17), "g2": Led(5), "g3": Led(19), "g4": Led(20),
-		"r1": Led(27), "r2": Led(6), "r3": Led(26), "r4": Led(21) 
-	}
-
 	mapping = [
 		{
 			"service": Service(f"catalis-chmi@{identifier}"),
