@@ -7,7 +7,7 @@ class Led():
 	GPIO_OFFSET = 454
 
 	# constructor
-	def __init__(self, pin:int):
+	def __init__(self, pin:int) -> None:
 		self.gpio = pin + self.GPIO_OFFSET
 
 		if not os.path.exists(f"/sys/class/gpio/gpio{self.gpio}"):
@@ -15,9 +15,9 @@ class Led():
 			sh.run(f"echo out > /sys/class/gpio/gpio{self.gpio}/direction", shell=True)
 
 	# turn LED on
-	def on(self):
+	def on(self) -> None:
 		sh.run(f"echo '1' > /sys/class/gpio/gpio{self.gpio}/value", shell=True)
 	
 	# turn LED on
-	def off(self):
+	def off(self) -> None:
 		sh.run(f"echo '0' > /sys/class/gpio/gpio{self.gpio}/value", shell=True)

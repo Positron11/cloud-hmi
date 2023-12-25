@@ -1,17 +1,10 @@
 #!/bin/python
 
-# ======================================================= IMPORTS & MODULE SETUP
-
-
 import os
-import sys
-import signal
-import subprocess as sh
-from types import FrameType
-from functools import partial
 
+from CatalisUtils.daemon import DBDaemon
 from CatalisUtils.logging import Logger
-from CatalisUtils.database import CatalisDB, busy_handler
+from CatalisUtils.database import CatalisDB
 from CatalisUtils.hardware import Led
 
 import json
@@ -19,7 +12,6 @@ from time import sleep, strftime, gmtime, time
 import apsw, apsw.bestpractice
 from pyModbusTCP.client import ModbusClient
 from configparser import RawConfigParser
-
 
 # initialize apsw
 apsw.bestpractice.apply((
@@ -29,183 +21,122 @@ apsw.bestpractice.apply((
 ))
 
 
-# ================================================================= CONFIG SETUP
+# initialize environment constants ---------------------------------------------
+HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 			"192.168.1.2")
+POLLING_FREQ 	= os.environ.get("CATALIS_POLLING_FREQUENCY", 	"5")
+POLL_RETRY_INT 	= os.environ.get("CATALIS_POLL_RETRY_INTERVAL", "10")
 
 
-# create config object
-class CFG:
-	FSTYPE 			= os.environ.get("CATALIS_FSTYPE", 					"vfat")
-	LABEL_PREFIX 	= os.environ.get("CATALIS_LABEL_PREFIX", 			"DATA-HMI")
-	MOUNTPOINT 		= os.environ.get("CATALIS_MOUNTPOINT", 				"/srv/CatalisDATA/")
-	DB_SUBDIR 		= os.environ.get("CATALIS_DB_SUBDIR", 				"current/")
-	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 				"polldata-hmi$HMID")
-	HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 				"192.168.1.2")
-	BUSY_RETRY_INT 	= os.environ.get("CATALIS_DB_BUSY_RETRY_INTERVAL", 	"10")
-	POLLING_FREQ 	= os.environ.get("CATALIS_POLLING_FREQUENCY", 		"5")
-	POLL_RETRY_INT 	= os.environ.get("CATALIS_POLL_RETRY_INTERVAL", 	"10")
-
-
-# ================================================================= DATA PACKETS
-
-
-# data packet definition class
+# data packet definition class -------------------------------------------------
 class PacketDefinition():
 	def __init__(self, type:str, frequency:int, addresses:list[int]) -> None:
 		self.type = type
 		self.frequency = frequency
 		self.addresses = addresses
 		self.lastpolled = -1 # poll immediately at startup
-
-
-# ====================================================================== POLLING
  
 
-# get poll data dictionary
+# get poll data dictionary -----------------------------------------------------
 def poll(client:ModbusClient, addresses:list[int]) -> dict:
 	try: return {str(addr):client.read_holding_registers(addr)[0] for addr in addresses}
 	except TypeError as e: raise e # if None value exists in data (ie. failed to retrieve a register)
 
 
-# ================================================================== MAIN DAEMON
-
-
-# daemon
-def daemon() -> None:
-	# initialize connectivity indicator led
+# driver -----------------------------------------------------------------------
+if __name__ == "__main__":
+	# shared object initialization
 	warning_light = Led(24)
-
-	# initialize logger 
 	logger = Logger(logfile=f"/var/log/catalis/poll-{strftime('%d%m%Y-%H%M%S', gmtime())}.log")
 
-	# register custom standard termination exit handler
-	signal.signal(signal.SIGTERM, partial(exit_clean, logger, warning_light))
 
-	# get filesytem label and generate db path
-	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
-	hmid = fs_label.strip(CFG.LABEL_PREFIX) 
-	dbpath =  os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
+	# preliminary operations ---------------------------------------------------
+	def prelim() -> None:
+		# add to logging preamble
+		logger.print(f"> HMI TCP/IP host address: {HMI_HOST}\n")
 
 
-	# write to journalctl log
-	sh.run(f"echo 'Daemon starting - Logging to {logger}.'", shell=True)
+	# main loop ----------------------------------------------------------------
+	def main(daemon:DBDaemon, db:CatalisDB) -> None:
+		# load packet definitions
+		parser = RawConfigParser()
+		parser.read("/etc/catalis/packet.conf")
+		
+		packet_defs = [
+			PacketDefinition(
+				type=definition,
+				frequency=int(parser.get(definition, "Frequency")),
+				addresses=[int(x) for x in parser.get(definition, "Addresses").split(",")]
+			) 
+			for definition in parser.sections()
+		]
 
-	# print logging preamble
-	logger.print(f"Catalis Cloud HMI Cloud Sync Daemon")
-	logger.print(f"> Session date: {strftime('%F', gmtime())} (GMT)")
-	logger.print(f"> CatKey label: {fs_label}")
-	logger.print(f"> DB path: {dbpath}")
-	logger.print(f"> HMI TCP/IP host address: {CFG.HMI_HOST}\n")
+		# initialize HMI MODBUS client
+		hmi = ModbusClient(host=HMI_HOST, timeout=POLLING_FREQ)
 
+		# main loop
+		groupcount = 1
+		groupstart = False
+		
+		while True:
+			for packet in packet_defs:
+				if (pollstart := int(time())) - packet.lastpolled > packet.frequency:
+					# print visual separator
+					if not groupstart: 
+						logger.print("---------|")
+						groupstart = True
 
-	# initialize TCP connection
-	hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLLING_FREQ)
-
-
-	# initialize database connection
-	logger.log("(init) <1/2>: Connecting to database in Write mode... ", endline=False)
-
-	try:
-		db = CatalisDB(dbpath, flags=apsw.SQLITE_OPEN_READWRITE, logger=logger)
-		db._connection.set_busy_handler(partial(busy_handler, db._logger, int(CFG.BUSY_RETRY_INT)))
-		logger.cap(f"connected to {dbpath}.")
-
-	except apsw.CantOpenError as e: # fatally exit if unable to open in write mode
-		exit_fatal(logger)
-
-
-	# load packet definitions
-	parser = RawConfigParser()
-	parser.read("/etc/catalis/packet.conf")
-	
-	packet_defs = [
-		PacketDefinition(
-			type=definition,
-			frequency=int(parser.get(definition, "Frequency")),
-			addresses=[int(x) for x in parser.get(definition, "Addresses").split(",")]
-		) 
-		for definition in parser.sections()
-	]
-
-
-	# main loop
-	groupcount = 1
-	groupstart = False
-	
-	while True:
-		for packet in packet_defs:
-			if (pollstart := int(time())) - packet.lastpolled > packet.frequency:
-				# print visual separator
-				if not groupstart: 
-					logger.print("---------|")
-					groupstart = True
-
-
-				# poll for data
-				logger.log(f"(poll~g{groupcount:03}) <1/2>: Polling HMI for packet type: \"{packet.type}\"... ", endline=False)
-				
-				while True:			
-					try:
-						data = poll(hmi, addresses=packet.addresses)
-						logger.cap(f"read {len(data)} registers.")
-
-						warning_light.off()
-						break
+					# poll for data
+					logger.log(f"(poll~g{groupcount:03}) <1/2>: Polling HMI for packet type: \"{packet.type}\"... ", endline=False)
 					
-					except TypeError: # on failure, retry...
-						warning_light.on()
+					while True:			
+						try:
+							data = poll(hmi, addresses=packet.addresses)
+							logger.cap(f"read {len(data)} registers.")
 
-						logger.cap("error.")
-						logger.log(f"No data received from link. Retrying in {CFG.POLL_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
+							warning_light.off()
+							break
+						
+						except TypeError: # on failure, retry...
+							warning_light.on()
 
-						sleep(int(CFG.POLL_RETRY_INT))
+							logger.cap("error.")
+							logger.log(f"No data received from link. Retrying in {POLL_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
 
+							sleep(int(POLL_RETRY_INT))
 
-				# write data to database
-				logger.log(f"(poll~g{groupcount:03}) <2/2>: Writing to database... ", endline=False)
+					# write data to database
+					logger.log(f"(poll~g{groupcount:03}) <2/2>: Writing to database... ", endline=False)
 
-				try: 
-					timestamp = strftime("%s", gmtime())
-					db.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?);", (timestamp, packet.type, json.dumps(data)))
-					logger.cap("written.")
-					packet.lastpolled = pollstart
+					try: 
+						timestamp = strftime("%s", gmtime())
+						db.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?);", (timestamp, packet.type, json.dumps(data)))
+						logger.cap("written.")
+						packet.lastpolled = pollstart
 
-				# on failure, throw fatal error...
-				except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
-					exit_fatal(logger)
+					# on failure, throw fatal error...
+					except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
+						daemon._exit_fatal(cleanup)
 
+			# increment pollgroup count
+			if groupstart: 
+				groupcount += 1
+				groupstart = False
 
-		# increment pollgroup count
-		if groupstart: 
-			groupcount += 1
-			groupstart = False
-
-		sleep(int(CFG.POLLING_FREQ))
-
-
-# ================================================================ EXIT HANDLERS
-
-
-# custom clean exit handler
-def exit_clean(logger:Logger, warning_light:Led, signum:int, frame:FrameType) -> None:
-	warning_light.off()
-
-	logger.print(f"\nTerminated cleanly at {strftime('%T', gmtime())}.")
-	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
-	
-	sys.exit(0)
+			sleep(int(POLLING_FREQ))
 
 
-# custom error exit handler
-def exit_fatal(logger:Logger) -> None:
-	logger.print(f"\nTerminated due to fatal error at {strftime('%T', gmtime())}.")
-	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logger}'", shell=True) # write to journalctl log
-	
-	sys.exit(1)
+	# cleanup function ---------------------------------------------------------
+	def cleanup() -> None:
+		warning_light.off()
 
 
-# ================================================================== DRIVER CODE
+	# initialize and start daemon ----------------------------------------------
+	daemon = DBDaemon(
+		name="MODBUS Poller", 
+		prelim=prelim, 
+		main=main, 
+		cleanup=cleanup, 
+		logger=logger
+	)
 
-
-# driver
-if __name__ == "__main__":
-	daemon()
+	daemon.start()

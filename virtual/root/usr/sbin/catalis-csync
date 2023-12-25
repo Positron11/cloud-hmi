@@ -1,25 +1,17 @@
 #!/bin/python
 
-# ======================================================= IMPORTS & MODULE SETUP
-
-
 import os
-import sys
-import signal
-import subprocess as sh
 from datetime import datetime
-from types import FrameType
-from functools import partial
 
+from CatalisUtils.daemon import DBDaemon
 from CatalisUtils.logging import Logger
-from CatalisUtils.database import CatalisDB, busy_handler
+from CatalisUtils.database import CatalisDB
 from CatalisUtils.hardware import Led
 
 import json
 from time import sleep, strftime, gmtime
 import apsw, apsw.bestpractice
 import requests
-
 
 # initialize apsw
 apsw.bestpractice.apply((
@@ -29,42 +21,18 @@ apsw.bestpractice.apply((
 ))
 
 
-# ================================================================= CONFIG SETUP
+# initialize environment constants ---------------------------------------------
+SYNCING_FREQ 	= os.environ.get("CATALIS_SYNCING_FREQUENCY", 			"30")
+REQ_RETRY_INT 	= os.environ.get("CATALIS_SYNC_REQUEST_RETRY_INTERVAL", "30")
+MAX_PAYLOAD 	= os.environ.get("CATALIS_SYNC_MAX_PAYLOAD", 			"100")
 
 
-# create config object
-class CFG:
-	FSTYPE 			= os.environ.get("CATALIS_FSTYPE", 						"vfat")
-	LABEL_PREFIX 	= os.environ.get("CATALIS_LABEL_PREFIX", 				"DATA-HMI")
-	MOUNTPOINT 		= os.environ.get("CATALIS_MOUNTPOINT", 					"/srv/CatalisDATA/")
-	DB_SUBDIR 		= os.environ.get("CATALIS_DB_SUBDIR", 					"current/")
-	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 					"polldata-hmi$HMID")
-	HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 					"192.168.1.2")
-	BUSY_RETRY_INT 	= os.environ.get("CATALIS_DB_BUSY_RETRY_INTERVAL", 		"10")
-	SYNCING_FREQ 	= os.environ.get("CATALIS_SYNCING_FREQUENCY", 			"30")
-	REQ_RETRY_INT 	= os.environ.get("CATALIS_SYNC_REQUEST_RETRY_INTERVAL", "30")
-	MAX_PAYLOAD 	= os.environ.get("CATALIS_SYNC_MAX_PAYLOAD", 			"100")
-
-
-# ================================================================== MAIN DAEMON
-
-
-# daemon
-def daemon() -> None:
-	# initialize connectivity indicator led
-	warning_light = Led(24)
-
-	# initialize logger 
+# driver------------------------------------------------------------------------
+if __name__ == "__main__":
+	# shared object initialization
+	warning_light = Led(23)
 	logger = Logger(logfile=f"/var/log/catalis/csync-{strftime('%d%m%Y-%H%M%S', gmtime())}.log")
-
-	# register custom standard termination exit handler
-	signal.signal(signal.SIGTERM, partial(exit_clean, logger, warning_light))
-
-	# get filesystem label and generate database path
-	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
-	hmid = fs_label.strip(CFG.LABEL_PREFIX)
-	dbpath = os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
-
+	
 	# api setup
 	url = "https://enpc23shl3hkn.x.pipedream.net"
 	headers = {
@@ -72,137 +40,102 @@ def daemon() -> None:
 	}
 
 
-	# write to journalctl log
-	sh.run(f"echo 'Daemon starting - logging to {logger}.'", shell=True)
-
-	# print logging preamble
-	logger.print(f"Catalis Cloud HMI Poller Daemon")
-	logger.print(f"> Session date: {strftime('%F', gmtime())} (GMT)")
-	logger.print(f"> CatKey label: {fs_label}")
-	logger.print(f"> DB path: {dbpath}")
-	logger.print(f"> API endpoint: {url}\n")
+	# preliminary operations ---------------------------------------------------
+	def prelim() -> None:
+		# add to logging preamble
+		logger.print(f"> API endpoint: {url}\n")
 
 
-	# initialize database connection
-	logger.log("(init) <1/1> Connecting to database in Read-Write mode... ", endline=False)
+	# main loop ----------------------------------------------------------------
+	def main(daemon:DBDaemon, db:CatalisDB) -> None:
+		synccount = 1
 
-	try:
-		db = CatalisDB(dbpath, flags=apsw.SQLITE_OPEN_READWRITE, logger=logger)
-		db._connection.set_busy_handler(partial(busy_handler, db._logger, int(CFG.BUSY_RETRY_INT)))
-		logger.cap(f"connected to {dbpath}.")
+		while True:
+			logger.print("---------|") # print visual separator
+			logger.log(f"(sync~{synccount:03}) <1/3> Fetching latest packets from database... ", endline=False)
+			
+			# read latest polls
+			lastsync = list(db.execute("SELECT value FROM meta WHERE type=?", ("lastsync", )))[0][0]
+			data = list(db.execute("""SELECT timestamp, type, data 
+							FROM packets 
+							WHERE timestamp > ? 
+							ORDER BY timestamp ASC 
+							LIMIT ?;""", (lastsync, MAX_PAYLOAD)))
 
-	except apsw.CantOpenError as e: # fatally exit if unable to open in write mode
-		exit_fatal(logger)
+			# if any new polls...
+			if data:
+				logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')} upwards.")
+				logger.log(f"(sync~{synccount:03}) <2/3> POSTing data to cloud API... ", endline=False)
 
-
-	# initialize connectivity indicator led
-	warning_light = Led(23)
-
-
-	# main upload loop
-	synccount = 1
-
-	while True:
-		logger.print("---------|") # print visual separator
-		logger.log(f"(sync~{synccount:03}) <1/3> Fetching latest packets from database... ", endline=False)
-		
-		# read latest polls
-		lastsync = list(db.execute("SELECT value FROM meta WHERE type=?", ("lastsync", )))[0][0]
-		data = list(db.execute("""SELECT timestamp, type, data 
-						 FROM packets 
-						 WHERE timestamp > ? 
-						 ORDER BY timestamp ASC 
-						 LIMIT ?;""", (lastsync, CFG.MAX_PAYLOAD)))
-
-		# if any new polls...
-		if data:
-			logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')} upwards.")
-			logger.log(f"(sync~{synccount:03}) <2/3> POSTing data to cloud API... ", endline=False)
-
-			# bundle data for upload
-			bundle = list()
-			for row in data:
-				bundle.append({
+				# bundle data for upload
+				bundle = [{
 					"timestamp": row[0], 
 					"type": row[1],
 					"data": json.loads(row[2])
-				})
+				} for row in data]
 
-			# send data to api endpoint
-			while True:
+				# send data to api endpoint
+				while True:
+					try:
+						response = requests.post(url=url, json=json.dumps(bundle), headers=headers)
+						
+						if 200 <= response.status_code <= 299: # sucessfully posted data
+							logger.log(f"uploaded to cloud.")
+
+							warning_light.off()
+							break
+					
+						else:
+							logger.cap(f"error ({response.status_code}).")
+							logger.log(f"HTTP error: {response.reason}", level=Logger.TRACE)
+							logger.log("Retrying POST request... ", endline=False)
+
+					except requests.exceptions.MissingSchema as e: # fatally exit if invalid url
+						logger.cap("error.")
+						logger.log(("Invalid URL (missing scheme) supplied for API endpoint. "
+									"Check value supplied in config."), level=Logger.FATAL)
+						logger.log(e, level=Logger.TRACE)
+
+						daemon._exit_fatal(cleanup)
+						
+					except requests.exceptions.ConnectionError as e:
+						if "NameResolutionError" in str(e): logger.cap("error (NameResolutionError).")
+						if "NewConnectionError" in str(e): logger.cap("error (NameResolutionError).")
+						logger.log(f"Failed to connect to API. Trying again in {REQ_RETRY_INT}s...", level=Logger.ERROR, endline=False)
+
+					warning_light.on()
+					sleep(int(REQ_RETRY_INT))
+
+				# set sync state to last entry's timestamp
 				try:
-					response = requests.post(url=url, json=json.dumps(bundle), headers=headers)
-					
-					if 200 <= response.status_code <= 299: # sucessfully posted data
-						logger.log(f"uploaded to cloud.")
-
-						warning_light.off()
-						break
+					logger.log(f"(sync~{synccount:03}) <3/3> Updating sync state... ", endline=False)
+					db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][0], "lastsync" ))
+					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
 				
-					else:
-						logger.cap(f"error ({response.status_code}).")
-						logger.log(f"HTTP error: {response.reason}", level=Logger.TRACE)
-						logger.log("Retrying POST request... ", endline=False)
+				# on failure, throw fatal error...
+				except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
+					daemon._exit_fatal(cleanup)
 
-				except requests.exceptions.MissingSchema as e: # fatally exit if invalid url
-					logger.cap("error.")
-					logger.log(("Invalid URL (missing scheme) supplied for API endpoint. "
-								"Check value supplied in config."), level=Logger.FATAL)
-					logger.log(e, level=Logger.TRACE)
+				synccount += 1
 
-					exit_fatal(logger)
-					
-				except requests.exceptions.ConnectionError as e:
-					if "NameResolutionError" in str(e): logger.cap("error (NameResolutionError).")
-					if "NewConnectionError" in str(e): logger.cap("error (NameResolutionError).")
-					logger.log(f"Failed to connect to API. Trying again in {CFG.REQ_RETRY_INT}s...", level=Logger.ERROR, endline=False)
+			else:
+				logger.log("no new entries.")
 
-				warning_light.on()
-				sleep(int(CFG.REQ_RETRY_INT))
-							
+			sleep(int(SYNCING_FREQ))
 
-			# set sync state to last entry's timestamp
-			try:
-				logger.log(f"(sync~{synccount:03}) <3/3> Updating sync state... ", endline=False)
-				db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][0], "lastsync" ))
-				logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
-			
-			# on failure, throw fatal error...
-			except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
-				exit_fatal(logger)
-
-			synccount += 1
-
-		else:
-			logger.log("no new entries.")
-
-		sleep(int(CFG.SYNCING_FREQ))
-
-
-# ============================================================== CUSTOM HANDLERS
-
-
-# custom clean exit handler
-def exit_clean(logger:Logger, warning_light:Led, signum:int, frame:FrameType) -> None:
-	warning_light.off()
-
-	logger.print(f"\nTerminated cleanly at {strftime('%T', gmtime())}.")
-	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
 	
-	sys.exit(0)
+	# cleanup function ---------------------------------------------------------
+	def cleanup():
+		warning_light.off()
 
 
-# custom error exit handler
-def exit_fatal(logger:Logger) -> None:
-	logger.print(f"\nTerminated due to fatal error at {strftime('%T', gmtime())}.")
-	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logger}'", shell=True) # write to journalctl log
+	# initialize and start daemon ----------------------------------------------
+	daemon = DBDaemon(
+		name="Cloud Sync", 
+		prelim=prelim, 
+		main=main, 
+		cleanup=cleanup, 
+		logger=logger
+	)
 	
-	sys.exit(1)
-
-
-# ================================================================== DRIVER CODE
-
-
-# driver
-if __name__ == "__main__":
-	daemon()
+	daemon.start()
