@@ -51,11 +51,14 @@ class CFG:
 
 # daemon
 def daemon() -> None:
+	# initialize connectivity indicator led
+	warning_light = Led(24)
+
 	# initialize logger 
 	logger = Logger(logfile=f"/var/log/catalis/csync-{strftime('%d%m%Y-%H%M%S', gmtime())}.log")
 
 	# register custom standard termination exit handler
-	signal.signal(signal.SIGTERM, partial(exit_clean, logger))
+	signal.signal(signal.SIGTERM, partial(exit_clean, logger, warning_light))
 
 	# get filesystem label and generate database path
 	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
@@ -180,9 +183,12 @@ def daemon() -> None:
 
 
 # custom clean exit handler
-def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
+def exit_clean(logger:Logger, warning_light:Led, signum:int, frame:FrameType) -> None:
+	warning_light.off()
+
 	logger.print(f"\nTerminated cleanly at {strftime('%T', gmtime())}.")
 	sh.run(f"echo 'Daemon exiting cleanly.'", shell=True) # write to journalctl log
+	
 	sys.exit(0)
 
 
@@ -190,6 +196,7 @@ def exit_clean(logger:Logger, signum:int, frame:FrameType) -> None:
 def exit_fatal(logger:Logger) -> None:
 	logger.print(f"\nTerminated due to fatal error at {strftime('%T', gmtime())}.")
 	sh.run(f"echo 'Daemon exiting with fatal error. Check log: {logger}'", shell=True) # write to journalctl log
+	
 	sys.exit(1)
 
 
