@@ -138,17 +138,9 @@ def daemon() -> None:
 					exit_fatal(logger)
 					
 				except requests.exceptions.ConnectionError as e:
-					logger.cap("error.")
-
-					if "NameResolutionError" in str(e): # fatally exit if unable to resolve hostname
-						logger.log("Unable to resolve hostname. Check value supplied in config", level=Logger.FATAL)
-						logger.log(e, level=Logger.TRACE)
-
-						exit_fatal(logger)
-
-					elif "NewConnectionError" in str(e): # retry if connectivity outage
-						logger.log(f"Failed to connect to API. Trying again in {CFG.REQ_RETRY_INT}s...", level=Logger.Error)
-						logger.log(e, level=Logger.TRACE)
+					if "NameResolutionError" in str(e): logger.cap("error (NameResolutionError).")
+					if "NewConnectionError" in str(e): logger.cap("error (NameResolutionError).")
+					logger.log(f"Failed to connect to API. Trying again in {CFG.REQ_RETRY_INT}s...", level=Logger.ERROR, endline=False)
 
 				sleep(int(CFG.REQ_RETRY_INT))
 							
