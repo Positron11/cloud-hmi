@@ -12,6 +12,7 @@ from functools import partial
 
 from CatalisUtils.logging import Logger
 from CatalisUtils.database import CatalisDB, busy_handler
+from CatalisUtils.hardware import Led
 
 import json
 from time import sleep, strftime, gmtime, time
@@ -123,6 +124,10 @@ def daemon() -> None:
 	]
 
 
+	# initialize connectivity indicator led
+	warning_light = Led(24)
+
+
 	# main loop
 	groupcount = 1
 	groupstart = False
@@ -143,9 +148,13 @@ def daemon() -> None:
 					try:
 						data = poll(hmi, addresses=packet.addresses)
 						logger.cap(f"read {len(data)} registers.")
+
+						warning_light.off()
 						break
 					
 					except TypeError: # on failure, retry...
+						warning_light.on()
+
 						logger.cap("error.")
 						logger.log(f"No data received from link. Retrying in {CFG.POLL_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
 

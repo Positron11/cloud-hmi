@@ -13,6 +13,7 @@ from functools import partial
 
 from CatalisUtils.logging import Logger
 from CatalisUtils.database import CatalisDB, busy_handler
+from CatalisUtils.hardware import Led
 
 import json
 from time import sleep, strftime, gmtime
@@ -42,6 +43,7 @@ class CFG:
 	BUSY_RETRY_INT 	= os.environ.get("CATALIS_DB_BUSY_RETRY_INTERVAL", 		"10")
 	SYNCING_FREQ 	= os.environ.get("CATALIS_SYNCING_FREQUENCY", 			"30")
 	REQ_RETRY_INT 	= os.environ.get("CATALIS_SYNC_REQUEST_RETRY_INTERVAL", "30")
+	MAX_PAYLOAD 	= os.environ.get("CATALIS_SYNC_MAX_PAYLOAD", 			"100")
 
 
 # ================================================================== MAIN DAEMON
@@ -90,6 +92,10 @@ def daemon() -> None:
 		exit_fatal(logger)
 
 
+	# initialize connectivity indicator led
+	warning_light = Led(23)
+
+
 	# main upload loop
 	synccount = 1
 
@@ -99,7 +105,11 @@ def daemon() -> None:
 		
 		# read latest polls
 		lastsync = list(db.execute("SELECT value FROM meta WHERE type=?", ("lastsync", )))[0][0]
-		data = list(db.execute("SELECT timestamp, type, data FROM packets WHERE timestamp > ? ORDER BY timestamp ASC;", (lastsync, )))
+		data = list(db.execute("""SELECT timestamp, type, data 
+						 FROM packets 
+						 WHERE timestamp > ? 
+						 ORDER BY timestamp ASC 
+						 LIMIT ?;""", (lastsync, CFG.MAX_PAYLOAD)))
 
 		# if any new polls...
 		if data:
@@ -122,6 +132,8 @@ def daemon() -> None:
 					
 					if 200 <= response.status_code <= 299: # sucessfully posted data
 						logger.log(f"uploaded to cloud.")
+
+						warning_light.off()
 						break
 				
 					else:
@@ -142,6 +154,7 @@ def daemon() -> None:
 					if "NewConnectionError" in str(e): logger.cap("error (NameResolutionError).")
 					logger.log(f"Failed to connect to API. Trying again in {CFG.REQ_RETRY_INT}s...", level=Logger.ERROR, endline=False)
 
+				warning_light.on()
 				sleep(int(CFG.REQ_RETRY_INT))
 							
 
