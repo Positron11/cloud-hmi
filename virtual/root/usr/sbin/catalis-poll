@@ -101,19 +101,11 @@ def daemon() -> None:
 	logger.log("(init) <1/2>: Connecting to database in Write mode... ", endline=False)
 
 	try:
-		db = CatalisDB(dbpath)
-		db._connection.set_busy_handler(partial(busy_handler, logger, int(CFG.BUSY_RETRY_INT)))
-		
-		logger.log(f"connected to {dbpath}.")
+		db = CatalisDB(dbpath, flags=apsw.SQLITE_OPEN_READWRITE, logger=logger)
+		db._connection.set_busy_handler(partial(busy_handler, db._logger, int(CFG.BUSY_RETRY_INT)))
+		logger.cap(f"connected to {dbpath}.")
 
-	except apsw.CantOpenError as e:
-		logger.cap("error.")
-		logger.log(("Unable to open/create database file: check mountpoint "
-			  		"exists + permissions (Sugg. fixes: Check mountpoint defined "
-					"in /etc/catalis/global.conf and consult with your system "
-					"administrator)."), level=Logger.FATAL)
-		logger.log(e, level=Logger.TRACE)
-
+	except apsw.CantOpenError as e: # fatally exit if unable to open in write mode
 		exit_fatal(logger)
 
 
@@ -165,7 +157,7 @@ def daemon() -> None:
 
 				try: 
 					timestamp = strftime("%s", gmtime())
-					db.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?);", (timestamp, packet.type, json.dumps(data)), logger=logger)
+					db.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?);", (timestamp, packet.type, json.dumps(data)))
 					logger.cap("written.")
 					packet.lastpolled = pollstart
 

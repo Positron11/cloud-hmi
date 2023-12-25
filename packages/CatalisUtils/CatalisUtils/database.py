@@ -13,19 +13,30 @@ apsw.bestpractice.apply((
 
 # catalis polls sqlite database handler
 class CatalisDB():
-	def __init__(self, dbpath:str, flags:int=None):
+	def __init__(self, dbpath:str, flags:int=None, logger:Logger=None):
+		self._logger = logger
+
+		# try to connect to database
 		try: 
 			if flags: self._connection = apsw.Connection(dbpath, flags=flags)	
 			else: self._connection = apsw.Connection(dbpath)	
 		
 		except apsw.CantOpenError as e: # failed to initialize database
+			if self._logger:
+				self._logger.cap("error.")
+				self._logger.log(("Unable to open database file: check mountpoint "
+							"exists + permissions (Sugg. fixes: Check mountpoint defined "
+							"in /etc/catalis/global.conf and consult with your system "
+							"administrator)."), level=Logger.FATAL)
+				self._logger.log(e, level=Logger.TRACE)
+			
 			raise e
 
 
 	# initialize tables and defaults
 	def initialize(self):
 		# initialize polling data packet table
-		self._connection.execute("""CREATE TABLE IF NOT EXISTS packets (
+		self.execute("""CREATE TABLE IF NOT EXISTS packets (
 				id INTEGER PRIMARY KEY,
 				timestamp TEXT NOT NULL,
 				type TEXT NOT NULL,
@@ -34,45 +45,45 @@ class CatalisDB():
 		);""")
 
 		# initialize metadata table
-		self._connection.execute("""CREATE TABLE IF NOT EXISTS meta (
+		self.execute("""CREATE TABLE IF NOT EXISTS meta (
 				id INTEGER PRIMARY KEY,
 				type TEXT NOT NULL UNIQUE,
 				value TEXT
 		);""")
 
 		# insert default metadata if necessary
-		self._connection.execute("INSERT OR IGNORE INTO meta (type, value) VALUES (?,?)", ("lastsync", "0"))
+		self.execute("INSERT OR IGNORE INTO meta (type, value) VALUES (?,?)", ("lastsync", "0"))
 
 
 	# error-handling wrapper for execute
-	def execute(self, query:str, bindings:tuple[str]=(), logger:Logger=None) -> apsw.Cursor:
+	def execute(self, query:str, bindings:tuple[str]=()) -> apsw.Cursor:
 		try:
 			return self._connection.execute(query, bindings)
 		
 		# failed to write to database
 		except apsw.ReadOnlyError as e0:		
-			if logger: 
-				logger.cap("error.")
-				logger.log(f"Failed while writing to database - ", level=Logger.FATAL, endline=False)
+			if self._logger: 
+				self._logger.cap("error.")
+				self._logger.log(f"Failed while writing to database - ", level=Logger.FATAL, endline=False)
 				
 			try: # check if can open db, if yes assume permissions error
 				test = apsw.Connection(self._connection.filename, flags=apsw.SQLITE_OPEN_READWRITE)
 				
-				if logger: 
-					logger.log(("check mounted filesytem permissions (Sugg. "
+				if self._logger: 
+					self._logger.log(("check mounted filesytem permissions (Sugg. "
 				 				"fixes: Reinsert the storage volume to restart "
 								"all services)."))
-					logger.log(e0, level=Logger.TRACE)
+					self._logger.log(e0, level=Logger.TRACE)
 				
 				raise e0
 				
 			except apsw.CantOpenError as e1: # otherwise, assume database deleted
-				if logger: 
-					logger.log(("local DB may have been deleted (Sugg. "
+				if self._logger: 
+					self._logger.log(("local DB may have been deleted (Sugg. "
 								"fixes: to prevent data loss -  DO NOT UNPLUG "
 								"USB KEY OR STOP/RESTART SERVICES UNTIL CLOUD "
 								"SYNC SERVICE HAS FAILED)."))
-					logger.log(e1, level=Logger.TRACE)
+					self._logger.log(e1, level=Logger.TRACE)
 				
 				raise e1
 

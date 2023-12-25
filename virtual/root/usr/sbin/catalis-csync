@@ -82,19 +82,13 @@ def daemon() -> None:
 	# initialize database connection
 	logger.log("(init) <1/1> Connecting to database in Read-Write mode... ", endline=False)
 
-	while True:
-		try:
-			db = CatalisDB(dbpath, flags=apsw.SQLITE_OPEN_READWRITE)
-			db._connection.set_busy_handler(partial(busy_handler, logger, int(CFG.BUSY_RETRY_INT)))
-			
-			logger.cap(f"connected to {dbpath}.")
-			break
-		
-		except apsw.CantOpenError:
-			logger.cap("error.")
-			logger.log(f"Error initializing database connection. Trying again in {CFG.CONN_RETRY_INT}s...", level=Logger.ERROR, endline=False)
+	try:
+		db = CatalisDB(dbpath, flags=apsw.SQLITE_OPEN_READWRITE, logger=logger)
+		db._connection.set_busy_handler(partial(busy_handler, db._logger, int(CFG.BUSY_RETRY_INT)))
+		logger.cap(f"connected to {dbpath}.")
 
-			sleep(int(CFG.CONN_RETRY_INT))
+	except apsw.CantOpenError as e: # fatally exit if unable to open in write mode
+		exit_fatal(logger)
 
 
 	# main upload loop
@@ -163,7 +157,7 @@ def daemon() -> None:
 			# set sync state to last entry's timestamp
 			try:
 				logger.log(f"(sync~{synccount:03}) <3/3> Updating sync state... ", endline=False)
-				db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][0], "lastsync" ), logger=logger)
+				db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][0], "lastsync" ))
 				logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
 			
 			# on failure, throw fatal error...
