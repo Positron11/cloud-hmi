@@ -33,16 +33,15 @@ apsw.bestpractice.apply((
 
 # create config object
 class CFG:
-	FSTYPE 			= os.environ.get("CATALIS_FSTYPE", 							"vfat")
-	LABEL_PREFIX 	= os.environ.get("CATALIS_LABEL_PREFIX", 					"DATA-HMI")
-	MOUNTPOINT 		= os.environ.get("CATALIS_MOUNTPOINT", 						"/srv/CatalisDATA/")
-	DB_SUBDIR 		= os.environ.get("CATALIS_DB_SUBDIR", 						"current/")
-	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 						"polldata-hmi$HMID")
-	HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 						"192.168.1.2")
-	BUSY_RETRY_INT 	= os.environ.get("CATALIS_DB_BUSY_RETRY_INTERVAL", 			"10")
-	SYNCING_FREQ 	= os.environ.get("CATALIS_SYNCING_FREQUENCY", 				"30")
-	CONN_RETRY_INT 	= os.environ.get("CATALIS_SYNC_DB_CONNECT_RETRY_INTERVAL", 	"60")
-	REQ_RETRY_INT 	= os.environ.get("CATALIS_SYNC_REQUEST_RETRY_INTERVAL", 	"30")
+	FSTYPE 			= os.environ.get("CATALIS_FSTYPE", 						"vfat")
+	LABEL_PREFIX 	= os.environ.get("CATALIS_LABEL_PREFIX", 				"DATA-HMI")
+	MOUNTPOINT 		= os.environ.get("CATALIS_MOUNTPOINT", 					"/srv/CatalisDATA/")
+	DB_SUBDIR 		= os.environ.get("CATALIS_DB_SUBDIR", 					"current/")
+	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 					"polldata-hmi$HMID")
+	HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 					"192.168.1.2")
+	BUSY_RETRY_INT 	= os.environ.get("CATALIS_DB_BUSY_RETRY_INTERVAL", 		"10")
+	SYNCING_FREQ 	= os.environ.get("CATALIS_SYNCING_FREQUENCY", 			"30")
+	REQ_RETRY_INT 	= os.environ.get("CATALIS_SYNC_REQUEST_RETRY_INTERVAL", "30")
 
 
 # ================================================================== MAIN DAEMON
