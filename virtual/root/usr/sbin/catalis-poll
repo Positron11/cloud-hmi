@@ -59,6 +59,7 @@ class PacketDefinition():
 # ====================================================================== POLLING
  
 
+# get poll data dictionary
 def poll(client:ModbusClient, addresses:list[int]) -> dict:
 	try: return {str(addr):client.read_holding_registers(addr)[0] for addr in addresses}
 	except TypeError as e: raise e # if None value exists in data (ie. failed to retrieve a register)
@@ -75,31 +76,35 @@ def daemon() -> None:
 	# register custom standard termination exit handler
 	signal.signal(signal.SIGTERM, partial(exit_clean, logger))
 
-	# write to journalctl log
-	sh.run(f"echo 'Daemon started. Logging to {logger}.'", shell=True)
-
-	# get filesytem label
+	# get filesytem label and generate db path
 	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
+	hmid = fs_label.strip(CFG.LABEL_PREFIX) 
+	dbpath =  os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
+
+
+	# write to journalctl log
+	sh.run(f"echo 'Daemon starting - Logging to {logger}.'", shell=True)
 
 	# print logging preamble
-	logger.print(f"Welcome to the Catalis Cloud HMI Poller Daemon")
-	logger.print(f"Session date: {strftime('%F', gmtime())} (GMT)")
-	logger.print(f"Filesystem label: {fs_label}")
-	logger.print(f"Mount point: {CFG.MOUNTPOINT}")
-	logger.print(f"HMI TCP/IP host address: {CFG.HMI_HOST}\n")
+	logger.print(f"Catalis Cloud HMI Cloud Sync Daemon")
+	logger.print(f"> Session date: {strftime('%F', gmtime())} (GMT)")
+	logger.print(f"> CatKey label: {fs_label}")
+	logger.print(f"> DB path: {dbpath}")
+	logger.print(f"> HMI TCP/IP host address: {CFG.HMI_HOST}\n")
+
+
+	# initialize TCP connection
+	hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLLING_FREQ)
 
 
 	# initialize database connection
-	logger.log("(init) <1/2>: Connecting to database... ", endline=False)
+	logger.log("(init) <1/2>: Connecting to database in Write mode... ", endline=False)
 
 	try:
-		hmid = fs_label.strip(CFG.LABEL_PREFIX) 
-		dbpath =  os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
-		
 		db = CatalisDB(dbpath)
 		db._connection.set_busy_handler(partial(busy_handler, logger, int(CFG.BUSY_RETRY_INT)))
 		
-		logger.log(f"connected to {db._connection.db_filename}.")
+		logger.log(f"connected to {dbpath}.")
 
 	except apsw.CantOpenError as e:
 		logger.cap("error.")
@@ -110,10 +115,6 @@ def daemon() -> None:
 		logger.log(e, level=Logger.TRACE)
 
 		exit_fatal(logger)
-
-
-	# initialize TCP connection
-	hmi = ModbusClient(host=CFG.HMI_HOST, timeout=CFG.POLLING_FREQ)
 
 
 	# load packet definitions

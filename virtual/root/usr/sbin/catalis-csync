@@ -56,27 +56,34 @@ def daemon() -> None:
 	# register custom standard termination exit handler
 	signal.signal(signal.SIGTERM, partial(exit_clean, logger))
 
-	# write to journalctl log
-	sh.run(f"echo 'Daemon started. Logging to {logger}.'", shell=True)
-
-	# get filesystem label
+	# get filesystem label and generate database path
 	fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
+	hmid = fs_label.strip(CFG.LABEL_PREFIX)
+	dbpath = os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
 
-	# initial information
-	logger.print(f"Welcome to the Catalis Cloud HMI Poller Daemon")
-	logger.print(f"Session date: {strftime('%F', gmtime())} (GMT)")
-	logger.print(f"Filesystem label: {fs_label}")
-	logger.print(f"Mount point: {CFG.MOUNTPOINT}")
-	logger.print(f"HMI TCP/IP host address: {CFG.HMI_HOST}\n")
+	# api setup
+	url = "https://enpc23shl3hkn.x.pipedream.net"
+	headers = {
+		"Content-Type": "application/json"
+	}
+
+
+	# write to journalctl log
+	sh.run(f"echo 'Daemon starting - logging to {logger}.'", shell=True)
+
+	# print logging preamble
+	logger.print(f"Catalis Cloud HMI Poller Daemon")
+	logger.print(f"> Session date: {strftime('%F', gmtime())} (GMT)")
+	logger.print(f"> CatKey label: {fs_label}")
+	logger.print(f"> DB path: {dbpath}")
+	logger.print(f"> API endpoint: {url}\n")
 
 
 	# initialize database connection
-	logger.log("(init) <1/1> Initializing database connection Read-Write mode... ", endline=False)
+	logger.log("(init) <1/1> Connecting to database in Read-Write mode... ", endline=False)
 
 	while True:
 		try:
-			hmid = fs_label.strip(CFG.LABEL_PREFIX)
-			dbpath = os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
 			db = CatalisDB(dbpath, flags=apsw.SQLITE_OPEN_READWRITE)
 			db._connection.set_busy_handler(partial(busy_handler, logger, int(CFG.BUSY_RETRY_INT)))
 			
@@ -88,13 +95,6 @@ def daemon() -> None:
 			logger.log(f"Error initializing database connection. Trying again in {CFG.CONN_RETRY_INT}s...", level=Logger.ERROR, endline=False)
 
 			sleep(int(CFG.CONN_RETRY_INT))
-
-
-	# api setup
-	url = "https://enpc23shl3hkn.x.pipedream.net"
-	headers = {
-		"Content-Type": "application/json"
-	}
 
 
 	# main upload loop
