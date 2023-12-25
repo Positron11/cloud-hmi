@@ -72,7 +72,7 @@ class CatalisDB():
 				if self._logger: 
 					self._logger.log(("check mounted filesytem permissions (Sugg. "
 				 				"fixes: Reinsert the storage volume to restart "
-								"all services)."))
+								"all services, or re-format drive)."))
 					self._logger.log(e0, level=Logger.TRACE)
 				
 				raise e0
