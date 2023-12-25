@@ -1,9 +1,5 @@
 #!/bin/python
 
-# ======================================================= IMPORTS & MODULE SETUP
-
-
-import os
 import sys
 from time import sleep
 import subprocess as sh
@@ -11,9 +7,7 @@ import subprocess as sh
 from CatalisUtils.hardware import Led
 
 
-# ================================================================ SERVICE CLASS
-
-
+# service object ---------------------------------------------------------------
 class Service():
 	def __init__(self, name:str):
 		self.name = f"{name}.service"
@@ -23,10 +17,7 @@ class Service():
 		return sh.getoutput(f"systemctl is-failed {self.name}")
 
 
-# ================================================================== MAIN DAEMON
-
-
-# daemon
+# daemon -----------------------------------------------------------------------
 def daemon():
 	identifier = sys.argv[1]
 
@@ -72,7 +63,7 @@ def daemon():
 
 				# set led according to status
 				if service["service"].status() == "failed":	service["leds"]["red"].on()
-				elif service["service"].status() == "active": service["leds"]["green"].on()
+				elif service["service"].status() in ["active", "activating"]: service["leds"]["green"].on()
 
 			sleep(1)
 
@@ -83,10 +74,7 @@ def daemon():
 				led.off()
 
 
-# ================================================================== DRIVER CODE
-
-
-# driver
+# driver -----------------------------------------------------------------------
 if __name__ == "__main__":
 	daemon()
 
