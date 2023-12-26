@@ -1,7 +1,7 @@
 [Unit]
 Description=Catalis Cloud HMI poll data upload service
 BindsTo=catalis-chmi@%i.service
-Requires=catalis-dbinit@%i.service
+Requires=catalis-dbinit@%i.service catalis-wireless@%i.service
 After=catalis-dbinit@%i.service
 
 [Service]

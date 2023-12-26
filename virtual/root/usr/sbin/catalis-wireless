@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# restart networking (if necessary) to load config file from key
+SSID=$(iw dev wlan0 info | grep ssid | awk '{print $2}')
+
+if [ $SSID ]; then
+	echo "(wireless) <1/1> Already connected to $SSID (Note: this does not mean you have internet access)"
+else
+	systemctl restart networking
+	echo "(wireless) <1/1> Restarted network service to load wireless network configuration (/srv/CatalisDATA/config/wireless.conf)"
+fi

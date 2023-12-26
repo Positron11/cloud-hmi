@@ -1,0 +1,11 @@
+[Unit]
+Description=Catalis Cloud HMI wireless connectivity service
+Requires=catalis-mount@%i.service
+After=catalis-mount@%i.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/catalis-wireless
+
+[Install]
+WantedBy=multi-user.target
