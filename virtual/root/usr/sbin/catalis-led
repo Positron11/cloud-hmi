@@ -3,6 +3,7 @@
 import sys
 from time import sleep
 import subprocess as sh
+from threading import Thread, Event
 
 from CatalisUtils.hardware import Led
 
@@ -17,34 +18,71 @@ class Service():
 		return sh.getoutput(f"systemctl is-failed {self.name}")
 
 
+# service scanner --------------------------------------------------------------
+def service_scan(service_map:list, exit_event:Event) -> None:
+	# reset failed states
+	sh.run("systemctl reset-failed", shell=True)
+
+	while not exit_event.is_set():
+		for service in service_map:
+			# turn off all leds for service
+			for led in service["leds"].values(): led.off()
+
+			# set led according to status
+			if service["service"].status() == "failed":	service["leds"]["red"].on()
+			elif service["service"].status() in ["active", "activating"]: service["leds"]["green"].on()
+
+		sleep(1)
+
+
+# network scanner
+def network_scan(network_leds:dict, exit_event:Event) -> None:
+	while not exit_event.is_set():
+		# get network status
+		network = sh.getoutput("iw dev wlan0 info | grep ssid | awk '{print $2}'")
+		internet = int(sh.getoutput("wget -q --spider http://google.com ; echo $?")) == 0
+
+		# set network leds
+		for led in network_leds.values(): led.off()
+		if network and internet: network_leds["green"].on()
+		elif network: network_leds["yellow"].on()
+		else: network_leds["red"].on()
+
+		sleep(10)
+
+
 # daemon -----------------------------------------------------------------------
 def daemon():
-	identifier = sys.argv[1]
+	network_leds = {
+		"red": Led(22),
+		"yellow": Led(10),
+		"green": Led(9)
+	}
 
-	mapping = [
+	service_map = [
 		{
-			"service": Service(f"catalis-chmi@{identifier}"),
+			"service": Service(f"catalis-chmi@{sys.argv[1]}"),
 			"leds": {
 				"green": Led(17),
 				"red": Led(27)
 			}
 		},
 		{
-			"service": Service(f"catalis-init@{identifier}"),
+			"service": Service(f"catalis-init@{sys.argv[1]}"),
 			"leds": {
 				"green": Led(5),
 				"red": Led(6)
 			}
 		},
 		{
-			"service": Service(f"catalis-poll@{identifier}"),
+			"service": Service(f"catalis-poll@{sys.argv[1]}"),
 			"leds": {
 				"green": Led(19),
 				"red": Led(26)
 			}
 		},
 		{
-			"service": Service(f"catalis-csync@{identifier}"),
+			"service": Service(f"catalis-csync@{sys.argv[1]}"),
 			"leds": {
 				"green": Led(20),
 				"red": Led(21)
@@ -52,26 +90,29 @@ def daemon():
 		}
 	]
 
-	# reset failed states
-	sh.run("systemctl reset-failed", shell=True)
+	# define exit event for all threads
+	exit_event = Event()
+
+	# create scanning threads
+	service_thread = Thread(target=service_scan, args=(service_map, exit_event))
+	network_thread = Thread(target=network_scan, args=(network_leds, exit_event))
 
 	try:
-		while True:
-			for service in mapping:
-				# turn off all leds for service
-				for led in service["leds"].values(): led.off()
+		service_thread.start()
+		network_thread.start()
+		
+		service_thread.join()
+		network_thread.join()
 
-				# set led according to status
-				if service["service"].status() == "failed":	service["leds"]["red"].on()
-				elif service["service"].status() in ["active", "activating"]: service["leds"]["green"].on()
-
-			sleep(1)
-
-	# turn off all leds on exit
+	# terminate threads and turn off all leds on exit
 	except KeyboardInterrupt:
-		for service in mapping:
+		exit_event.set()
+
+		for service in service_map:
 			for led in service["leds"].values():
 				led.off()
+
+		for led in network_leds.values(): led.off()
 
 
 # driver -----------------------------------------------------------------------
