@@ -17,19 +17,48 @@ apsw.bestpractice.apply((
 
 
 # initialize environment vars
-class CFG:
-	LABEL_PREFIX	= os.environ.get("CATALIS_LABEL_PREFIX",	"DATA-HMI")
-	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 		"polldata-hmi$HMID")
+LABEL_PREFIX	= os.environ.get("CATALIS_LABEL_PREFIX",	"DATA-HMI")
+DB_PATTERN		= os.environ.get("CATALIS_DB_PATTERN", 		"polldata-hmi$HMID")
 
 
 # create db subdirectory
 basepath = "/srv/CatalisDATA/database/"
 os.makedirs(basepath, exist_ok=True)
 
+sh.run("echo '(db init) <1/5> Created parent directories'", shell=True)
+
+
 # initialize connection
-hmid = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1").strip(CFG.LABEL_PREFIX)
-dbpath =  os.path.join(basepath, (f"{CFG.DB_PATTERN}.sqlite3").replace("$HMID", hmid))
+hmid = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1").strip(LABEL_PREFIX)
+dbpath =  os.path.join(basepath, (f"{DB_PATTERN}.sqlite3").replace("$HMID", hmid))
 db = CatalisDB(dbpath)
 
-# initialize database
-db.initialize()
+sh.run(f"echo '(db init) <2/5> Connected to database at {dbpath}'", shell=True)
+
+
+# initialize polling data packet table
+db.execute("""CREATE TABLE IF NOT EXISTS packets (
+		id INTEGER PRIMARY KEY,
+		timestamp TEXT NOT NULL,
+		type TEXT NOT NULL,
+		data TEXT NOT NULL,
+		UNIQUE(timestamp, type) ON CONFLICT IGNORE
+);""")
+
+sh.run("echo '(db init) <3/5> Initialized packets table'", shell=True)
+
+
+# initialize metadata table
+db.execute("""CREATE TABLE IF NOT EXISTS meta (
+		id INTEGER PRIMARY KEY,
+		type TEXT NOT NULL UNIQUE,
+		value TEXT
+);""")
+
+sh.run("echo '(db init) <4/5> Initialized meta table'", shell=True)
+
+
+# insert default metadata if necessary
+db.execute("INSERT OR IGNORE INTO meta (type, value) VALUES (?,?)", ("lastsync", "0"))
+
+sh.run("echo '(db init) <5/5> Initialized meta values'", shell=True)

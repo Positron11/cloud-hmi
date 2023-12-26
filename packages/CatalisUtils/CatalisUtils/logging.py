@@ -19,7 +19,7 @@ class Logger:
 		self._logfile = logfile
 
 
-	# get open logfile path
+	# get active logfile path
 	def __str__(self):
 		return self._logfile
 

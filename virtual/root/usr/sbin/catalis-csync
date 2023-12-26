@@ -63,8 +63,7 @@ if __name__ == "__main__":
 							ORDER BY timestamp ASC 
 							LIMIT ?;""", (lastsync, MAX_PAYLOAD)))
 
-			# if any new polls...
-			if data:
+			if data: # if any new polls...
 				logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')} upwards.")
 				logger.log(f"(sync~{synccount:03}) <2/3> POSTing data to cloud API... ", endline=False)
 
@@ -75,8 +74,7 @@ if __name__ == "__main__":
 					"data": json.loads(row[2])
 				} for row in data]
 
-				# send data to api endpoint
-				while True:
+				while True: # send data to api endpoint
 					try:
 						response = requests.post(url=ENDPOINT, json=bundle, headers=headers)
 						
@@ -104,11 +102,10 @@ if __name__ == "__main__":
 						if "NewConnectionError" in str(e): logger.cap("error (NameResolutionError).")
 						logger.log(f"Failed to connect to API. Trying again in {REQ_RETRY_INT}s...", level=Logger.ERROR, endline=False)
 
-					warning_light.on()
+					warning_light.on() # if not broken out of loop yet, turn on wraning light
 					sleep(int(REQ_RETRY_INT))
 
-				# set sync state to last entry's timestamp
-				try:
+				try: # set sync state to last entry's timestamp
 					logger.log(f"(sync~{synccount:03}) <3/3> Updating sync state... ", endline=False)
 					db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][0], "lastsync" ))
 					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")

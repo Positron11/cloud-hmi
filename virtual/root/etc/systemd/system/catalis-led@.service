@@ -1,5 +1,5 @@
 [Unit]
-Description=Catalis Cloud HMI hardware indicator service
+Description=Catalis Cloud HMI status indicator service
 BindsTo=catalis-chmi@%i.service
 
 [Service]

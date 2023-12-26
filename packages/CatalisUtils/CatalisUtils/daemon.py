@@ -23,7 +23,6 @@ apsw.bestpractice.apply((
 
 # daemon wrapper class
 class DBDaemon():
-	FSTYPE 			= os.environ.get("CATALIS_FSTYPE",					"vfat")
 	LABEL_PREFIX 	= os.environ.get("CATALIS_LABEL_PREFIX", 			"DATA-HMI")
 	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 				"polldata-hmi$HMID")
 	BUSY_RETRY_INT 	= os.environ.get("CATALIS_DB_BUSY_RETRY_INTERVAL", 	"10")

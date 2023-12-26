@@ -6,4 +6,4 @@ echo -n "(unmount) <1/2> Unmounted $1 from /srv/CatalisDATA"
 
 # delete mountpoint
 rm -r /srv/CatalisDATA
-echo "(unmount) <2/2> Deleted mountpoint /srv/CatalisDATA"
+echo "(unmount) <2/2> Deleted mountpoint at /srv/CatalisDATA"

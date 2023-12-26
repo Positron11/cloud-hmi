@@ -60,7 +60,7 @@ if __name__ == "__main__":
 		# load packet definitions
 		parser = RawConfigParser()
 		parser.read("/srv/CatalisDATA/config/packet.conf")
-		
+
 		packet_defs = [
 			PacketDefinition(
 				type=definition,
@@ -80,7 +80,7 @@ if __name__ == "__main__":
 		while True:
 			for packet in packet_defs:
 				if (pollstart := int(time())) - packet.lastpolled > packet.frequency:
-					# print visual separator
+					# print visual separator at start of each pollign group
 					if not groupstart: 
 						logger.print("---------|")
 						groupstart = True

@@ -32,7 +32,7 @@ def service_scan(service_map:list, exit_event:Event) -> None:
 			if service["service"].status() == "failed":	service["leds"]["red"].on()
 			elif service["service"].status() in ["active", "activating"]: service["leds"]["green"].on()
 
-		sleep(1)
+		sleep(5)
 
 
 # network scanner
@@ -42,13 +42,15 @@ def network_scan(network_leds:dict, exit_event:Event) -> None:
 		network = sh.getoutput("iw dev wlan0 info | grep ssid | awk '{print $2}'")
 		internet = int(sh.getoutput("wget -q --spider http://google.com ; echo $?")) == 0
 
-		# set network leds
+		# turn off all network leds
 		for led in network_leds.values(): led.off()
+		
+		# set network indicators
 		if network and internet: network_leds["green"].on()
 		elif network: network_leds["yellow"].on()
 		else: network_leds["red"].on()
 
-		sleep(10)
+		sleep(25)
 
 
 # daemon -----------------------------------------------------------------------
@@ -62,31 +64,19 @@ def daemon():
 	service_map = [
 		{
 			"service": Service(f"catalis-chmi@{sys.argv[1]}"),
-			"leds": {
-				"green": Led(17),
-				"red": Led(27)
-			}
+			"leds": {"green": Led(17), "red": Led(27)}
 		},
 		{
 			"service": Service(f"catalis-init@{sys.argv[1]}"),
-			"leds": {
-				"green": Led(5),
-				"red": Led(6)
-			}
+			"leds": {"green": Led(5), "red": Led(6)}
 		},
 		{
 			"service": Service(f"catalis-poll@{sys.argv[1]}"),
-			"leds": {
-				"green": Led(19),
-				"red": Led(26)
-			}
+			"leds": {"green": Led(19), "red": Led(26)}
 		},
 		{
 			"service": Service(f"catalis-csync@{sys.argv[1]}"),
-			"leds": {
-				"green": Led(20),
-				"red": Led(21)
-			}
+			"leds": {"green": Led(20), "red": Led(21)}
 		}
 	]
 

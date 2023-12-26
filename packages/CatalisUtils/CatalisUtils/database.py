@@ -33,28 +33,6 @@ class CatalisDB():
 			raise e
 
 
-	# initialize tables and defaults
-	def initialize(self):
-		# initialize polling data packet table
-		self.execute("""CREATE TABLE IF NOT EXISTS packets (
-				id INTEGER PRIMARY KEY,
-				timestamp TEXT NOT NULL,
-				type TEXT NOT NULL,
-				data TEXT NOT NULL,
-				UNIQUE(timestamp, type) ON CONFLICT IGNORE
-		);""")
-
-		# initialize metadata table
-		self.execute("""CREATE TABLE IF NOT EXISTS meta (
-				id INTEGER PRIMARY KEY,
-				type TEXT NOT NULL UNIQUE,
-				value TEXT
-		);""")
-
-		# insert default metadata if necessary
-		self.execute("INSERT OR IGNORE INTO meta (type, value) VALUES (?,?)", ("lastsync", "0"))
-
-
 	# error-handling wrapper for execute
 	def execute(self, query:str, bindings:tuple[str]=()) -> apsw.Cursor:
 		try:
@@ -72,7 +50,7 @@ class CatalisDB():
 				if self._logger: 
 					self._logger.log(("check mounted filesytem permissions (Sugg. "
 				 				"fixes: Reinsert the storage volume to restart "
-								"all services, or re-format drive)."))
+								"all services, or re-format drive and copy data back in)."))
 					self._logger.log(e0, level=Logger.TRACE)
 				
 				raise e0
@@ -80,7 +58,7 @@ class CatalisDB():
 			except apsw.CantOpenError as e1: # otherwise, assume database deleted
 				if self._logger: 
 					self._logger.log(("local DB may have been deleted (Sugg. "
-								"fixes: to prevent data loss -  DO NOT UNPLUG "
+								"fixes: to prevent data loss - DO NOT UNPLUG "
 								"USB KEY OR STOP/RESTART SERVICES UNTIL CLOUD "
 								"SYNC SERVICE HAS FAILED)."))
 					self._logger.log(e1, level=Logger.TRACE)
@@ -92,5 +70,6 @@ class CatalisDB():
 def busy_handler(logger:Logger, wait:int, priorcalls:int):
 	logger.cap("error.")
 	logger.log(f"Database is busy - trying again in {wait}s... ", level=Logger.ERROR, endline=False)
+	
 	sleep(wait)
 	return True

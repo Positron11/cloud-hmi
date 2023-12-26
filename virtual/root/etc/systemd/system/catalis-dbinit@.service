@@ -2,11 +2,9 @@
 Description=Catalis Cloud HMI database initialization service
 Requires=catalis-mount@%i.service
 After=catalis-mount@%i.service
-PartOf=catalis-poll@%i.service
 
 [Service]
 Type=oneshot
-RemainAfterExit=yes
 EnvironmentFile=/etc/catalis/global.conf
 ExecStart=/usr/sbin/catalis-dbinit %i
 

@@ -5,5 +5,5 @@ mkdir -p /srv/CatalisDATA
 echo "(mount) <1/2> Created mountpoint at /srv/CatalisDATA"
 
 # mount device
-/bin/mount -t $CATALIS_FSTYPE -o flush /dev/$1 /srv/CatalisDATA
+/bin/mount -t vfat -o flush /dev/$1 /srv/CatalisDATA
 echo "(mount) <2/2> Mounted /dev/$1 at /srv/CatalisDATA"

@@ -18,6 +18,6 @@ class Led():
 	def on(self) -> None:
 		sh.run(f"echo '1' > /sys/class/gpio/gpio{self.gpio}/value", shell=True)
 	
-	# turn LED on
+	# turn LED off
 	def off(self) -> None:
 		sh.run(f"echo '0' > /sys/class/gpio/gpio{self.gpio}/value", shell=True)
