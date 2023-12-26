@@ -22,9 +22,9 @@ apsw.bestpractice.apply((
 
 
 # initialize environment constants ---------------------------------------------
-HMI_HOST 		= os.environ.get("CATALIS_HMI_HOST", 			"192.168.1.2")
-POLLING_FREQ 	= os.environ.get("CATALIS_POLLING_FREQUENCY", 	"5")
-POLL_RETRY_INT 	= os.environ.get("CATALIS_POLL_RETRY_INTERVAL", "10")
+HMI_HOST 			= os.environ.get("CATALIS_HMI_HOST", 				"192.168.1.2")
+BASE_POLLING_FREQ 	= os.environ.get("CATALIS_BASE_POLLING_FREQUENCY", 	"5")
+POLL_RETRY_INT	 	= os.environ.get("CATALIS_POLL_RETRY_INTERVAL",		"10")
 
 
 # data packet definition class -------------------------------------------------
@@ -71,7 +71,7 @@ if __name__ == "__main__":
 		]
 
 		# initialize HMI MODBUS client
-		hmi = ModbusClient(host=HMI_HOST, timeout=POLLING_FREQ)
+		hmi = ModbusClient(host=HMI_HOST, timeout=int(BASE_POLLING_FREQ))
 
 		# main loop
 		groupcount = 1
@@ -122,7 +122,7 @@ if __name__ == "__main__":
 				groupcount += 1
 				groupstart = False
 
-			sleep(int(POLLING_FREQ))
+			sleep(int(BASE_POLLING_FREQ))
 
 
 	# cleanup function ---------------------------------------------------------
