@@ -166,3 +166,4 @@ pyvenv.cfg
 # project-specific
 /dev/
 /virtual/bin/
+/docs/src/

@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+<head>
+<meta charset='UTF-8'><meta name='viewport' content='width=device-width initial-scale=1'>
+<title>technical</title>
+<link rel="stylesheet" href="styles.css"></head>
+<body><h1 id='technical-documentation-for-the-catalis-cloudhmi-software-package'>Technical Documentation for the Catalis CloudHMI Software Package</h1>
+<h2 id='overview'>Overview</h2>
+<p>The CloudHMI (CHMI) software is a suite of Systemd services and daemons running on <a href='https://raspi.debian.net/tested-images/'>Debian 12</a> (Linux) for the Raspberry Pi, on a Raspberry Pi 4 (4 GB variant) gateway device. The primary aims of the system being:</p>
+<ul>
+<li>Polling a Catalis HMI </li>
+<li>Storing polled data in a database on an external USB &quot;key&quot;</li>
+<li>Syncing the data in the USB key with a database in the cloud via a provided API endpoint</li>
+
+</ul>
+<p>This documentation explains the service ecosystem that enables the Raspberry Pi to operate as a gateway device, and briefly touches upon operator work flow in the context of the USB &quot;key&quot;. For documentation regarding operator work flow,  refer to the operator documentation.</p>
+<h2 id='hardware'>Hardware</h2>
+<p>The suite runs on a Raspberry Pi 4 (4 GB RAM) single-board ARM64 computer. The primary storage device is a removable 32 GB SD card on the underside of the board, which contains the Linux file system. Various other ports (HDMI, USB type-A, ethernet, etc.) are provided for connecting external devices. The Pi is powered solely by 5 volts regulated DC input via a type-C USB connector.</p>
+<p>The Raspberry Pi exposes a number of General-Purpose Input/Output (GPIO) pins, a number of which have been used to drive physical LED service status indicators. Support for a real-time clock will also be via these pins.</p>
+<h2 id='configuration'>Configuration</h2>
+<p>Services define their own environment variables for any spawned scripts. A global configuration file common to multiple services is found at <code>/etc/catalis/global.conf</code>:</p>
+<pre><code>CATALIS_DB_PATTERN=&quot;polldata-hmi#$HMID&quot;
+CATALIS_DB_BUSY_RETRY_INTERVAL=&quot;10&quot;
+</code></pre>
+<p>Additional service-specific environment files are located in the <code>config/</code> directory of the default key mountpoint (see the section on the mounting service).</p>
+<p>The global configuration defines file system variables and variables accessed by the <code>CatalisUtils</code> python package. Service-specific environment files define variables that control the general operation of main services in terms of timing, API access, etc. (see service specifics).</p>
+<h2 id='work-flow'>Work Flow</h2>
+<p>The service suite is automatically activated upon the insertion of a USB external storage device (thumb drive), containing a partition with a <code>vfat</code> file system labeled <code>CAT-xxxxxxxx</code>, replacing each <code>x</code> with a single digit to create a seven-digit unique identification corresponding to the Catalis machine&#39;s serial code. The activation mechanism is defined in <code>/etd/udev/rules.d/catalis-mount.rules</code>, and is facilitated by the <code>udev</code> device manager. The rules specify that inserting a valid USB &quot;key&quot; will trigger the <code>catalis-chmi@&lt;identifier&gt;.service</code>, where <code>&lt;identifier&gt;</code> corresponds to the <code>/dev/sdxx</code> device identifier of the key, and removing the key will stop the same service.</p>
+<p>Essentially: the system is active as long as the key is inserted.</p>
+<h2 id='data-structures'>Data Structures</h2>
+<p>Data is structured in poll &quot;packets&quot;. A packet is a named, timestamped array of predefined register-value pairs. Packets are defined in <code>config/packet.conf</code> in the mount directory like so:</p>
+<pre><code>[report]
+Frequency=30
+Addresses=2000,2001,2002
+</code></pre>
+<p>Where <code>Frequency</code> specifies how often this specific packet (report, in this case) is polled for, and <code>Addresses</code> defines the registers polled as part of this packet.</p>
+<h2 id='database'>Database</h2>
+<p>Polling data is stored on a SQLite3 database on the key, where it is written to and read from during active operation. Write-ahead logging has not been enabled due to the hot-plug nature of the key. Data integrity is nearly guaranteed - a near-zero chance of corruption due to possible interrupted read-write operations to the database during the hot-plugging phase of the work flow.</p>
+<p>The database contains a <code>packets</code> table for poll data and a <code>meta</code> table for database meta-data - at present, primarily the last-synced (with the cloud) state of the database. <code>packets</code> stores timestamps in the UNIX time stamp format, and polled register data in JSON format. </p>
+<pre><code>ID   Timestamp    Type      Data
+9    1703613786   report    {&quot;2000&quot;:24, &quot;2001&quot;:998, &quot;2005&quot;:0}
+</code></pre>
+<h2 id='service-ecosystem'>Service Ecosystem</h2>
+<p><em>NOTE: a grasp of the Linux operating system is extremely beneficial (ie. essential) to understanding the service ecosystem and much of what follows - in the case of a lack of such, consider skipping ahead to the section on daemons.</em></p>
+<p><img src="images/services.svg" referrerpolicy="no-referrer" alt="Service Ecosystem"></p>
+<p>Services run on the Systemd service manager framework, and are defined as Systemd units (located in <code>/etc/systemd/system/</code>). The general dependency + calling relationship diagram above visually describes the Catalis CHMI service ecosystem. The legend for components is as follows:</p>
+<ul>
+<li><strong>Square:</strong> main service</li>
+<li><strong>Plain rectangle:</strong> run once and terminate immediately services</li>
+<li><strong>Double-edged rectangle:</strong> continuously running or keep-alive services</li>
+<li><strong>Parallelogram:</strong> run once and terminate immediately scripts</li>
+<li><strong>Solid cubes:</strong> continuously running scripts (daemons)</li>
+
+</ul>
+<p>The legend for relationships is as follows:</p>
+<ul>
+<li><strong>Solid line:</strong> [pointed by] directly calls [points to]</li>
+<li><strong>Dotted green line:</strong> [pointed by] requires [points to] to start</li>
+<li><strong>Dotted red line:</strong> [pointed by] is bound to [points to], ie. [pointed by] terminates if [points to] is terminated</li>
+
+</ul>
+<h2 id='service-specifics'>Service Specifics</h2>
+<p>All scripts executed by services are located in <code>/usr/sbin/</code>. As a general rules, plain scripts are written in bash, and daemons in Python.</p>
+<h3 id='catalis-chmi-main-service---catalis-chmiservice'>Catalis CHMI (Main Service) - <code>catalis-chmi@.service</code></h3>
+<p>The primary service of the ecosystem. Started upon insertion of the key, and stopped upon removal. Most services in the ecosystem bind to this service (ie. stopping this service propagates to most child services). Requires the main initialization service to successfully run before it runs itself. Executes <code>catalis-chmi</code> to spawn the polling and cloud sync daemons.</p>
+<h3 id='main-initialization-service---catalis-initservice'>Main Initialization Service - <code>catalis-init@.service</code></h3>
+<p>Runs once at startup before the primary service, and stays alive until the primary service is stopped. Executes <code>catalis-init</code> at startup to start the LED status indicator service.</p>
+<h3 id='led-indicator-service---catalis-ledservice'>LED Indicator Service - <code>catalis-led@.service</code></h3>
+<p>Called by the main initialization service, spawns a daemon that asynchronously scans various groups of system statuses (service status, network connectivity, etc.) and controls corresponding physical indicator lights via GPIO. </p>
+<p>All services are assigned green and red LED indicators, corresponding to active and failed states respectively. Network connectivity is indicated like so:</p>
+<ul>
+<li><strong>Green:</strong> connected to network, has internet access</li>
+<li><strong>Yellow:</strong> connected to network, no internet access</li>
+<li><strong>Red:</strong> not connected to a network</li>
+
+</ul>
+<h3 id='polling-service---catalis-pollservice'>Polling Service - <code>catalis-poll@.service</code></h3>
+<p>Called by the primary service, requires the database initialization service to run before it runs itself.</p>
+<p>Spawns a polling daemon that polls an HMI connected to the Raspberry Pi by ethernet cable, over TCP via the MODBUS protocol, and writes poll data to a database on the USB key. Loads process configuration variables from <code>config/polling.conf</code> in the mount directory:</p>
+<pre><code>CATALIS_HMI_HOST=&quot;192.168.1.3&quot;
+CATALIS_POLLING_FREQUENCY=&quot;1&quot;
+CATALIS_POLL_RETRY_INTERVAL=&quot;10&quot;
+</code></pre>
+<p>Loss of connectivity with the HMI (faulty ethernet connection, etc.) is a blocking, but non-fatal error. Inability to write to the database is a fatal error, indicative of either mangled file system permissions (Read Only) or database deletion.</p>
+<p>The polling daemon manages its own physical loss-of-connection warning indicator - a yellow LED in the polling service status indicator LED cluster.  </p>
+<h3 id='cloud-sync-service---catalis-csyncservice'>Cloud Sync Service - <code>catalis-csync@.service</code></h3>
+<p>Called by the primary service, requires the database initialization service and the wireless connectivity service to run before it runs itself.</p>
+<p>Spawns a daemon that fetches the latest data from the poll data database on the USB key in batches and uploads these &quot;bundles&quot; to a cloud database via POST request to an API endpoint defined in the cloud sync configuration file (located at <code>config/csync.conf</code> in the mount directory):</p>
+<pre><code>CATALIS_SYNCING_FREQUENCY=&quot;120&quot;
+CATALIS_SYNC_REQUEST_RETRY_INTERVAL=&quot;30&quot;
+CATALIS_SYNC_MAX_PAYLOAD=&quot;250&quot;
+CATALIS_CSYNC_API_ENDPOINT=&quot;https://cloud.catalis.com/api/sync&quot;
+</code></pre>
+<p>Keeping track of the &quot;latest&quot; data is done by storing a last-synced state in the database&#39;s <code>meta</code> table, selecting all entries newer than this state, and updating the state to the latest state upon a successful POST request to the endpoint.</p>
+<p>A <code>MAX_PAYLOAD</code> variable is configured to limit the maximum size of upload bundles to avoid overloading the server.</p>
+<p>A failed POST request is a blocking, but non-fatal error. Inability to write to the database is a fatal error, indicative of either mangled file system permissions (Read Only) or database deletion. A URL with an invalid schema specified in the configuration file is also a fatal error.</p>
+<p>The polling daemon manages its own physical failed-sync warning indicator - a yellow LED in the polling service status indicator LED cluster.  </p>
+<h3 id='database-initialization-service---catalis-dbinitservice'>Database Initialization Service - <code>catalis-dbinit@.service</code></h3>
+<p>Required by both the polling and the cloud sync services. Runs as a one-off service, and executes <code>catalis-dbinit</code> to:</p>
+<ol start='' >
+<li>Create the database subdirectory in the mount directory</li>
+<li>Create the database (if it doesn&#39;t already exist)</li>
+<li>Create the <code>packets</code> table (if it doesn&#39;t already exist)</li>
+<li>Create the <code>meta</code> table (if it doesn&#39;t already exist)</li>
+<li>Initialize the <code>meta</code> table with default values (if they haven&#39;t already been set)</li>
+
+</ol>
+<h3 id='wireless-connectivity-service---catalis-wirelessservice'>Wireless Connectivity Service - <code>catalis-wireless@.service</code></h3>
+<p>Required by the cloud sync service, and requires the mount service. Runs as a one-off service, and facilitates connection to a WPA2-PSK wireless network by simply reloading the system network service once the key has been mounted to ensure the <code>wpa_supplicant</code> configuration file specified in <code>/etc/network/interfaces</code> has been loaded:</p>
+<pre><code># interfaces(5) file used by ifup(8) and ifdown(8)
+
+allow-hotplug eth0
+iface eth0 inet static
+	address 192.168.1.1
+	netmask 255.255.255.0
+
+auto wlan0
+allow-hotplug wlan0
+iface wlan0 inet dhcp
+	wpa-conf mount-directory-path/config/wireless.conf
+</code></pre>
+<p>The contents of <code>wireless.conf</code> in the mount directory being the following:</p>
+<pre><code>network={
+        ssid=&quot;ssid-name&quot;
+        psk=&quot;wpa-key&quot;
+}
+</code></pre>
+<h3 id='mount-service---catalis-mountservice'>Mount Service - <code>catalis-mount@.service</code></h3>
+<p>Required by the database initialization and wireless connectivity services. Runs once and stays alive until the primary service is stopped, at which time it performs a cleanup function. Executes <code>catalis-mount</code> at startup, which creates the mountpoint (<code>/srv/CatalisDATA/</code>), and mounts the key at the mountpoint.</p>
+<p>When the service is stopped by propagation from the primary service, the service executes <code>catalis-unmount</code> to unmount the mountpoint from the root filesystem and delete the mountpoint.  </p>
+<h2 id='python-configuration'>Python Configuration</h2>
+<p>Python modules are installed system-wide with <code>pip</code> and the <code>--break-system-packages</code> flag (externally managed environment). A symbolic link to the latest binary of python needs to be created at <code>/bin/python</code>.</p>
+</body>
+</html>
