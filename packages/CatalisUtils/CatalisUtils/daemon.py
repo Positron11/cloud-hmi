@@ -49,7 +49,7 @@ class DBDaemon():
 		# get filesystem label and generate database path
 		fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
 		hmid = fs_label.strip(self.LABEL_PREFIX)
-		dbpath = (f"/srv/CatalisDATA/current/{self.DB_PATTERN}.sqlite3").replace("$HMID", hmid)
+		dbpath = (f"/srv/CatalisDATA/database/{self.DB_PATTERN}.sqlite3").replace("$HMID", hmid)
 
 		# print logging preamble
 		self.logger.print(f"Catalis Cloud HMI {self._name} Daemon")

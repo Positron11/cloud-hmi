@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
 	name="CatalisUtils",
-	version="0.1.21",
+	version="0.1.22",
 	description="Logfile creation and management utility for Catalis CloudHMI daemon services.",
 	author="Aarush Kumbhakern",
 	license="MIT",

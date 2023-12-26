@@ -23,8 +23,8 @@ class CFG:
 
 
 # create db subdirectory
-basepath = "/srv/CatalisDATA/current/"
-os.makedirs("/srv/CatalisDATA/current/", exist_ok=True)
+basepath = "/srv/CatalisDATA/database/"
+os.makedirs(basepath, exist_ok=True)
 
 # initialize connection
 hmid = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1").strip(CFG.LABEL_PREFIX)
