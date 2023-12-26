@@ -1,5 +1,5 @@
 [Unit]
-Description=Catalis Cloud HMI polling data storage volume mounting service
+Description=Catalis Cloud HMI database initialization service
 Requires=catalis-mount@%i.service
 After=catalis-mount@%i.service
 PartOf=catalis-poll@%i.service

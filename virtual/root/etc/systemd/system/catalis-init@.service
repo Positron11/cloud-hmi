@@ -1,5 +1,5 @@
 [Unit]
-Description=Catalis Cloud HMI init service
+Description=Catalis Cloud HMI main initialization service
 BindsTo=catalis-chmi@%i.service
 Before=catalis-chmi@%i.service
 Requires=catalis-mount@%i.service

@@ -1,5 +1,5 @@
 [Unit]
-Description=Catalis Cloud HMI MODBUS polling service
+Description=Catalis Cloud HMI hardware indicator service
 BindsTo=catalis-chmi@%i.service
 
 [Service]
