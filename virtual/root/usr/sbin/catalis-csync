@@ -87,7 +87,7 @@ if __name__ == "__main__":
 						else:
 							logger.cap(f"error ({response.status_code}).")
 							logger.log(f"HTTP error: {response.reason}", level=Logger.TRACE)
-							logger.log("Retrying POST request... ", endline=False)
+							logger.log(f"Retrying POST request in {REQ_RETRY_INT}s... ", endline=False)
 
 					except requests.exceptions.MissingSchema as e: # fatally exit if invalid url
 						logger.cap("error.")
