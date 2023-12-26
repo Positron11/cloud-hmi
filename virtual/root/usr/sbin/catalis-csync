@@ -78,7 +78,7 @@ if __name__ == "__main__":
 				# send data to api endpoint
 				while True:
 					try:
-						response = requests.post(url=ENDPOINT, json=json.dumps(bundle), headers=headers)
+						response = requests.post(url=ENDPOINT, json=bundle, headers=headers)
 						
 						if 200 <= response.status_code <= 299: # sucessfully posted data
 							logger.log(f"uploaded to cloud.")
