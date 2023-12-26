@@ -22,6 +22,8 @@ apsw.bestpractice.apply((
 
 
 # initialize environment constants ---------------------------------------------
+ENDPOINT 		= os.environ.get("CATALIS_CSYNC_API_ENDPOINT")
+
 SYNCING_FREQ 	= os.environ.get("CATALIS_SYNCING_FREQUENCY", 			"30")
 REQ_RETRY_INT 	= os.environ.get("CATALIS_SYNC_REQUEST_RETRY_INTERVAL", "30")
 MAX_PAYLOAD 	= os.environ.get("CATALIS_SYNC_MAX_PAYLOAD", 			"100")
@@ -34,7 +36,6 @@ if __name__ == "__main__":
 	logger = Logger(logfile=f"/var/log/catalis/csync-{strftime('%d%m%Y-%H%M%S', gmtime())}.log")
 	
 	# api setup
-	url = "https://enpc23shl3hkn.x.pipedream.net"
 	headers = {
 		"Content-Type": "application/json"
 	}
@@ -43,7 +44,7 @@ if __name__ == "__main__":
 	# preliminary operations ---------------------------------------------------
 	def prelim() -> None:
 		# add to logging preamble
-		logger.print(f"> API endpoint: {url}\n")
+		logger.print(f"> API endpoint: {ENDPOINT}\n")
 
 
 	# main loop ----------------------------------------------------------------
@@ -77,7 +78,7 @@ if __name__ == "__main__":
 				# send data to api endpoint
 				while True:
 					try:
-						response = requests.post(url=url, json=json.dumps(bundle), headers=headers)
+						response = requests.post(url=ENDPOINT, json=json.dumps(bundle), headers=headers)
 						
 						if 200 <= response.status_code <= 299: # sucessfully posted data
 							logger.log(f"uploaded to cloud.")
