@@ -19,14 +19,12 @@ apsw.bestpractice.apply((
 # initialize environment vars
 class CFG:
 	LABEL_PREFIX	= os.environ.get("CATALIS_LABEL_PREFIX",	"DATA-HMI")
-	MOUNTPOINT 		= os.environ.get("CATALIS_MOUNTPOINT",		"/srv/CatalisDATA/")
-	DB_SUBDIR 		= os.environ.get("CATALIS_DB_SUBDIR", 		"current/")
 	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 		"polldata-hmi$HMID")
 
 
 # create db subdirectory
-basepath = os.path.join(CFG.MOUNTPOINT, CFG.DB_SUBDIR)
-os.makedirs(basepath, exist_ok=True)
+basepath = "/srv/CatalisDATA/current/"
+os.makedirs("/srv/CatalisDATA/current/", exist_ok=True)
 
 # initialize connection
 hmid = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1").strip(CFG.LABEL_PREFIX)

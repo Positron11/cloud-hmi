@@ -59,7 +59,7 @@ if __name__ == "__main__":
 	def main(daemon:DBDaemon, db:CatalisDB) -> None:
 		# load packet definitions
 		parser = RawConfigParser()
-		parser.read(os.path.join(daemon.MOUNTPOINT, "config/packet.conf"))
+		parser.read("/srv/CatalisDATA/config/packet.conf")
 		
 		packet_defs = [
 			PacketDefinition(

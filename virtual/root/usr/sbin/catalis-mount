@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # create mountpoint
-mkdir -p $CATALIS_MOUNTPOINT
-echo "(mount) <1/2> Created mountpoint at $CATALIS_MOUNTPOINT"
+mkdir -p /srv/CatalisDATA
+echo "(mount) <1/2> Created mountpoint at /srv/CatalisDATA"
 
 # mount device
-/bin/mount -t $CATALIS_FSTYPE -o flush /dev/$1 $CATALIS_MOUNTPOINT
-echo "(mount) <2/2> Mounted /dev/$1 at $CATALIS_MOUNTPOINT"
+/bin/mount -t $CATALIS_FSTYPE -o flush /dev/$1 /srv/CatalisDATA
+echo "(mount) <2/2> Mounted /dev/$1 at /srv/CatalisDATA"
