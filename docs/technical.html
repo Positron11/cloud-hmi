@@ -17,13 +17,56 @@
 <h2 id='hardware'>Hardware</h2>
 <p>The suite runs on a Raspberry Pi 4 (4 GB RAM) single-board ARM64 computer. The primary storage device is a removable 32 GB SD card on the underside of the board, which contains the Linux file system. Various other ports (HDMI, USB type-A, ethernet, etc.) are provided for connecting external devices. The Pi is powered solely by 5 volts regulated DC input via a type-C USB connector.</p>
 <p>The Raspberry Pi exposes a number of General-Purpose Input/Output (GPIO) pins, a number of which have been used to drive physical LED service status indicators. Support for a real-time clock will also be via these pins.</p>
-<h2 id='configuration'>Configuration</h2>
+<h2 id='project-structure--installation'>Project Structure + Installation</h2>
+<p>This section describes the structure of the project directory (<a href='https://github.com/Positron11/cloud-hmi' target='_blank' class='url'>https://github.com/Positron11/cloud-hmi</a>).</p>
+<h3 id='documentation---docs'>Documentation - <code>/docs</code></h3>
+<p>Contains this and other documentation.</p>
+<h3 id='packages---packages'>Packages - <code>/packages</code></h3>
+<p>Contains the source for (at present, only) the <a href='https://test.pypi.org/project/catalisutils/'>CatalisUtils</a> python package which provides various general utilities (daemon management, database handling, etc.) to the daemons in the CloudHMI ecosystem.</p>
+<h3 id='virtual-file-system-proxy---virtualroot'>Virtual File System (Proxy) - <code>/virtual/root</code></h3>
+<p>The <code>/virtual</code> base directory is an artifact of the development process and as such  has no significance in the project directory - simply <code>/root</code> would have sufficed.</p>
+<pre><code>`-- virtual
+    |-- requirements.txt
+    `-- root
+        |-- etc
+        |   |-- catalis
+        |   |   `-- global.conf
+        |   |-- network
+        |   |   `-- interfaces
+        |   |-- systemd
+        |   |   `-- system
+        |   |       |-- catalis-chmi@.service
+        |   |       |-- catalis-csync@.service
+        |   |       |-- catalis-dbinit@.service
+        |   |       |-- catalis-init@.service
+        |   |       |-- catalis-led@.service
+        |   |       |-- catalis-mount@.service
+        |   |       |-- catalis-poll@.service
+        |   |       `-- catalis-wireless@.service
+        |   `-- udev
+        |       `-- rules.d
+        |           `-- catalis-mount.rules
+        `-- usr
+            `-- sbin
+                |-- catalis-csync
+                |-- catalis-dbinit
+                |-- catalis-init
+                |-- catalis-led
+                |-- catalis-main
+                |-- catalis-mount
+                |-- catalis-poll
+                |-- catalis-unmount
+                `-- catalis-wireless
+</code></pre>
+<p>The <code>/virtual/root</code> subdirectory acts as a proxy subset of the root directory (<code>/</code>) of the file system on the Raspberry Pi. File locations are a direct mapping, eg. to install <code>/virtual/root/usr/sbin/catalis-csync</code> from the project directory, you would copy it to <code>/usr/sbin/catalis-csync</code> on the Raspberry Pi.</p>
+<h3 id='installation-and-python-configuration'>Installation and Python Configuration</h3>
+<p>Besides the obvious mapping described above, note that all scripts in <code>/usr/sbin</code> must be given execute permissions. Python dependencies are provided in <code>/virtual/requirements.txt</code>. Python modules are installed system-wide with <code>pip</code> and the <code>--break-system-packages</code> flag (externally managed environment). A symbolic link to the latest binary of python needs to be created at <code>/bin/python</code>.</p>
+<h2 id='global-configuration'>Global Configuration</h2>
 <p>Services define their own environment variables for any spawned scripts. A global configuration file common to multiple services is found at <code>/etc/catalis/global.conf</code>:</p>
 <pre><code>CATALIS_DB_PATTERN=&quot;polldata-hmi#$HMID&quot;
 CATALIS_DB_BUSY_RETRY_INTERVAL=&quot;10&quot;
 </code></pre>
-<p>Additional service-specific environment files are located in the <code>config/</code> directory of the default key mountpoint (see the section on the mounting service).</p>
-<p>The global configuration defines file system variables and variables accessed by the <code>CatalisUtils</code> python package. Service-specific environment files define variables that control the general operation of main services in terms of timing, API access, etc. (see service specifics).</p>
+<p>(Additional service-specific environment files are located in the <code>config/</code> directory of the default key mountpoint - see the section on the mounting service). The global configuration defines file system variables and variables accessed by the <code>CatalisUtils</code> python package. Service-specific environment files define variables that control the general operation of main services in terms of timing, API access, etc. (see service specifics).</p>
 <h2 id='work-flow'>Work Flow</h2>
 <p>The service suite is automatically activated upon the insertion of a USB external storage device (thumb drive), containing a partition with a <code>vfat</code> file system labeled <code>CAT-xxxxxxxx</code>, replacing each <code>x</code> with a single digit to create a seven-digit unique identification corresponding to the Catalis machine&#39;s serial code. The activation mechanism is defined in <code>/etd/udev/rules.d/catalis-mount.rules</code>, and is facilitated by the <code>udev</code> device manager. The rules specify that inserting a valid USB &quot;key&quot; will trigger the <code>catalis-chmi@&lt;identifier&gt;.service</code>, where <code>&lt;identifier&gt;</code> corresponds to the <code>/dev/sdxx</code> device identifier of the key, and removing the key will stop the same service.</p>
 <p>Essentially: the system is active as long as the key is inserted.</p>
@@ -59,7 +102,7 @@ Addresses=2000,2001,2002
 <li><strong>Dotted red line:</strong> [pointed by] is bound to [points to], ie. [pointed by] terminates if [points to] is terminated</li>
 
 </ul>
-<h2 id='service-specifics'>Service Specifics</h2>
+<h2 id='service-and-daemon-specifics'>Service and Daemon Specifics</h2>
 <p>All scripts executed by services are located in <code>/usr/sbin/</code>. As a general rules, plain scripts are written in bash, and daemons in Python.</p>
 <h3 id='catalis-chmi-main-service---catalis-chmiservice'>Catalis CHMI (Main Service) - <code>catalis-chmi@.service</code></h3>
 <p>The primary service of the ecosystem. Started upon insertion of the key, and stopped upon removal. Most services in the ecosystem bind to this service (ie. stopping this service propagates to most child services). Requires the main initialization service to successfully run before it runs itself. Executes <code>catalis-chmi</code> to spawn the polling and cloud sync daemons.</p>
@@ -128,7 +171,5 @@ iface wlan0 inet dhcp
 <h3 id='mount-service---catalis-mountservice'>Mount Service - <code>catalis-mount@.service</code></h3>
 <p>Required by the database initialization and wireless connectivity services. Runs once and stays alive until the primary service is stopped, at which time it performs a cleanup function. Executes <code>catalis-mount</code> at startup, which creates the mountpoint (<code>/srv/CatalisDATA/</code>), and mounts the key at the mountpoint.</p>
 <p>When the service is stopped by propagation from the primary service, the service executes <code>catalis-unmount</code> to unmount the mountpoint from the root filesystem and delete the mountpoint.  </p>
-<h2 id='python-configuration'>Python Configuration</h2>
-<p>Python modules are installed system-wide with <code>pip</code> and the <code>--break-system-packages</code> flag (externally managed environment). A symbolic link to the latest binary of python needs to be created at <code>/bin/python</code>.</p>
 </body>
 </html>
