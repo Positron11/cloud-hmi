@@ -22,7 +22,10 @@ apsw.bestpractice.apply((
 
 
 # initialize environment constants ---------------------------------------------
-ENDPOINT 		= os.environ.get("CATALIS_CSYNC_API_ENDPOINT")
+API_ENDPOINT 	= os.environ.get("CATALIS_CSYNC_API_ENDPOINT")
+ORG_ID			= os.environ.get("CATALIS_CSYNC_ORG_ID")
+SITE_ID			= os.environ.get("CATALIS_CSYNC_SITE_ID")
+API_KEY 		= os.environ.get("CATALIS_CSYNC_API_KEY")
 
 SYNCING_FREQ 	= os.environ.get("CATALIS_SYNCING_FREQUENCY", 			"30")
 REQ_RETRY_INT 	= os.environ.get("CATALIS_SYNC_REQUEST_RETRY_INTERVAL", "30")
@@ -37,18 +40,30 @@ if __name__ == "__main__":
 	
 	# api setup
 	headers = {
-		"Content-Type": "application/json"
+		"Content-Type": "application/json",
+		"X-Org-ID": ORG_ID,
+		"X-Site-ID": SITE_ID,
+		"X-API-Key": API_KEY
 	}
 
 
 	# preliminary operations ---------------------------------------------------
 	def prelim() -> None:
 		# add to logging preamble
-		logger.print(f"> API endpoint: {ENDPOINT}\n")
+		logger.print(f"> API endpoint: {API_ENDPOINT}\n")
 
 
 	# main loop ----------------------------------------------------------------
 	def main(daemon:DBDaemon, db:CatalisDB) -> None:
+		# make sure all required API parameters exist
+		if not all([API_ENDPOINT, ORG_ID, SITE_ID, API_KEY]):
+			logger.log(("Missing one of the required values in config file: "
+			   			"CATALIS_CSYNC_API_ENDPOINT, CATALIS_CSYNC_ORG_ID, "
+						"CATALIS_CSYNC_SITE_ID, CATALIS_CSYNC_API_KEY."), level=Logger.FATAL)
+			
+			daemon._exit_fatal(cleanup)
+		
+		# start main loop
 		synccount = 1
 
 		while True:
@@ -76,18 +91,15 @@ if __name__ == "__main__":
 
 				while True: # send data to api endpoint
 					try:
-						response = requests.post(url=ENDPOINT, json=bundle, headers=headers)
+						response = requests.post(url=API_ENDPOINT, json=bundle, headers=headers)
+						logger.cap(f"status {response.status_code} ({response.reason}).")
 						
 						if 200 <= response.status_code <= 299: # sucessfully posted data
-							logger.log(f"status 200 (OK).")
-
 							warning_light.off()
 							break
 					
 						else:
-							logger.cap(f"error ({response.status_code}).")
-							logger.log(f"HTTP error: {response.reason}", level=Logger.TRACE)
-							logger.log(f"Retrying request in {REQ_RETRY_INT}s... ", endline=False)
+							logger.log(f"HTTP client error - retrying request in {REQ_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
 
 					except requests.exceptions.MissingSchema as e: # fatally exit if invalid url
 						logger.cap("error.")
