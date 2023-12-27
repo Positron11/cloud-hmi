@@ -110,6 +110,7 @@ Addresses=2000,2001,2002
 <p>Runs once at startup before the primary service, and stays alive until the primary service is stopped. Executes <code>catalis-init</code> at startup to start the LED status indicator service.</p>
 <h3 id='led-indicator-service---catalis-ledservice'>LED Indicator Service - <code>catalis-led@.service</code></h3>
 <p>Called by the main initialization service, spawns a daemon that asynchronously scans various groups of system statuses (service status, network connectivity, etc.) and controls corresponding physical indicator lights via GPIO. </p>
+<h4 id='network-status'>Network Status</h4>
 <p>All services are assigned green and red LED indicators, corresponding to active and failed states respectively. Network connectivity is indicated like so:</p>
 <ul>
 <li><strong>Green:</strong> connected to network, has internet access</li>
@@ -125,7 +126,8 @@ CATALIS_POLLING_FREQUENCY=&quot;1&quot;
 CATALIS_POLL_RETRY_INTERVAL=&quot;10&quot;
 </code></pre>
 <p>Loss of connectivity with the HMI (faulty ethernet connection, etc.) is a blocking, but non-fatal error. Inability to write to the database is a fatal error, indicative of either mangled file system permissions (Read Only) or database deletion.</p>
-<p>The polling daemon manages its own physical loss-of-connection warning indicator - a yellow LED in the polling service status indicator LED cluster.  </p>
+<p>The polling daemon manages its own physical loss-of-connection warning indicator - a yellow LED in the polling service status indicator LED cluster. </p>
+<p>Packets are polled pseudo-asynchronously, by running a loop at a (high) base polling frequency, and checking if the difference between the current time and the last polled time of each packet defined in <code>config/packet.conf</code> in the mount directory is greater than the <code>frequency</code> assigned to each packet.</p>
 <h3 id='cloud-sync-service---catalis-csyncservice'>Cloud Sync Service - <code>catalis-csync@.service</code></h3>
 <p>Called by the primary service, requires the database initialization service and the wireless connectivity service to run before it runs itself.</p>
 <p>Spawns a daemon that fetches the latest data from the poll data database on the USB key in batches and uploads these &quot;bundles&quot; to a cloud database via POST request to an API endpoint defined in the cloud sync configuration file (located at <code>config/csync.conf</code> in the mount directory):</p>
