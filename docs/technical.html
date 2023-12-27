@@ -4,7 +4,8 @@
 <meta charset='UTF-8'><meta name='viewport' content='width=device-width initial-scale=1'>
 <title>technical</title>
 <link rel="stylesheet" href="styles.css"></head>
-<body><h1 id='technical-documentation-for-the-catalis-cloudhmi-software-package'>Technical Documentation for the Catalis CloudHMI Software Package</h1>
+<body><p><a href='./index.html'>Main Page</a></p>
+<h1 id='technical-documentation-for-the-catalis-cloudhmi-software-package'>Technical Documentation for the Catalis CloudHMI Software Package</h1>
 <h2 id='overview'>Overview</h2>
 <p>The CloudHMI (CHMI) software is a suite of Systemd services and daemons running on <a href='https://raspi.debian.net/tested-images/'>Debian 12</a> (Linux) for the Raspberry Pi, on a Raspberry Pi 4 (4 GB variant) gateway device. The primary aims of the system being:</p>
 <ul>
@@ -17,16 +18,65 @@
 <h2 id='hardware'>Hardware</h2>
 <p>The suite runs on a Raspberry Pi 4 (4 GB RAM) single-board ARM64 computer. The primary storage device is a removable 32 GB SD card on the underside of the board, which contains the Linux file system. Various other ports (HDMI, USB type-A, ethernet, etc.) are provided for connecting external devices. The Pi is powered solely by 5 volts regulated DC input via a type-C USB connector.</p>
 <p>The Raspberry Pi exposes a number of General-Purpose Input/Output (GPIO) pins, a number of which have been used to drive physical LED service status indicators. Support for a real-time clock will also be via these pins.</p>
-<h2 id='configuration'>Configuration</h2>
+<h2 id='project-structure--installation'>Project Structure + Installation</h2>
+<p>This section describes the structure of the project directory (<a href='https://github.com/Positron11/cloud-hmi' target='_blank' class='url'>https://github.com/Positron11/cloud-hmi</a>).</p>
+<h3 id='documentation---docs'>Documentation - <code>/docs</code></h3>
+<p>Contains this and other documentation.</p>
+<h3 id='packages---packages'>Packages - <code>/packages</code></h3>
+<p>Contains the source for (at present, only) the <a href='https://test.pypi.org/project/catalisutils/'>CatalisUtils</a> python package which provides various general utilities (daemon management, database handling, etc.) to the daemons in the CloudHMI ecosystem.</p>
+<h3 id='virtual-file-system-proxy---virtualroot'>Virtual File System (Proxy) - <code>/virtual/root</code></h3>
+<p>The <code>/virtual</code> base directory is an artifact of the development process and as such  has no significance in the project directory - simply <code>/root</code> would have sufficed.</p>
+<pre><code>`-- virtual
+    |-- requirements.txt
+    `-- root
+        |-- etc
+        |   |-- catalis
+        |   |   `-- global.conf
+        |   |-- network
+        |   |   `-- interfaces
+        |   |-- systemd
+        |   |   `-- system
+        |   |       |-- catalis-chmi@.service
+        |   |       |-- catalis-csync@.service
+        |   |       |-- catalis-dbinit@.service
+        |   |       |-- catalis-init@.service
+        |   |       |-- catalis-led@.service
+        |   |       |-- catalis-mount@.service
+        |   |       |-- catalis-poll@.service
+        |   |       `-- catalis-wireless@.service
+        |   `-- udev
+        |       `-- rules.d
+        |           `-- catalis-mount.rules
+        `-- usr
+            `-- sbin
+                |-- catalis-csync
+                |-- catalis-dbinit
+                |-- catalis-init
+                |-- catalis-led
+                |-- catalis-main
+                |-- catalis-mount
+                |-- catalis-poll
+                |-- catalis-unmount
+                `-- catalis-wireless
+</code></pre>
+<p>The <code>/virtual/root</code> subdirectory acts as a proxy subset of the root directory (<code>/</code>) of the file system on the Raspberry Pi. File locations are a direct mapping, eg. to install <code>/virtual/root/usr/sbin/catalis-csync</code> from the project directory, you would copy it to <code>/usr/sbin/catalis-csync</code> on the Raspberry Pi.</p>
+<h3 id='installation-and-python-configuration'>Installation and Python Configuration</h3>
+<p>Besides the obvious mapping described above, note that all scripts in <code>/usr/sbin</code> must be given execute permissions. Python dependencies are provided in <code>/virtual/requirements.txt</code>. Python modules are installed system-wide with <code>pip</code> and the <code>--break-system-packages</code> flag (externally managed environment). A symbolic link to the latest binary of python needs to be created at <code>/bin/python</code>.</p>
+<h2 id='global-configuration'>Global Configuration</h2>
 <p>Services define their own environment variables for any spawned scripts. A global configuration file common to multiple services is found at <code>/etc/catalis/global.conf</code>:</p>
 <pre><code>CATALIS_DB_PATTERN=&quot;polldata-hmi#$HMID&quot;
 CATALIS_DB_BUSY_RETRY_INTERVAL=&quot;10&quot;
 </code></pre>
-<p>Additional service-specific environment files are located in the <code>config/</code> directory of the default key mountpoint (see the section on the mounting service).</p>
-<p>The global configuration defines file system variables and variables accessed by the <code>CatalisUtils</code> python package. Service-specific environment files define variables that control the general operation of main services in terms of timing, API access, etc. (see service specifics).</p>
+<p>(Additional service-specific environment files are located in the <code>config/</code> directory of the default key mountpoint - see the section on the mounting service). The global configuration defines file system variables and variables accessed by the <code>CatalisUtils</code> python package. Service-specific environment files define variables that control the general operation of main services in terms of timing, API access, etc. (see service specifics).</p>
 <h2 id='work-flow'>Work Flow</h2>
-<p>The service suite is automatically activated upon the insertion of a USB external storage device (thumb drive), containing a partition with a <code>vfat</code> file system labeled <code>CAT-xxxxxxxx</code>, replacing each <code>x</code> with a single digit to create a seven-digit unique identification corresponding to the Catalis machine&#39;s serial code. The activation mechanism is defined in <code>/etd/udev/rules.d/catalis-mount.rules</code>, and is facilitated by the <code>udev</code> device manager. The rules specify that inserting a valid USB &quot;key&quot; will trigger the <code>catalis-chmi@&lt;identifier&gt;.service</code>, where <code>&lt;identifier&gt;</code> corresponds to the <code>/dev/sdxx</code> device identifier of the key, and removing the key will stop the same service.</p>
+<p>The service suite is automatically activated upon the insertion of a USB external storage device (thumb drive), containing a partition with a <code>vfat</code> file system labeled <code>CAT-xxxxxxxx</code>, replacing each <code>x</code> with a single digit to create a seven-digit unique identification corresponding to the Catalis machine&#39;s serial code.</p>
 <p>Essentially: the system is active as long as the key is inserted.</p>
+<h3 id='work-flow-activation'>Work Flow Activation</h3>
+<p>The activation mechanism is defined in <code>/etd/udev/rules.d/catalis-mount.rules</code>, and is facilitated by the <code>udev</code> device manager:</p>
+<pre><code>ACTION==&quot;add&quot;, KERNEL==&quot;sd*&quot;, ENV{ID_FS_LABEL}==&quot;CAT-[0-9][0-9][0-9][0-9][0-9][0-9][0-9]&quot;, TAG+=&quot;systemd&quot;, ENV{SYSTEMD_WANTS}=&quot;catalis-chmi@%k.service&quot;
+ACTION==&quot;remove&quot;, KERNEL==&quot;sd*&quot;, ENV{ID_FS_LABEL}==&quot;CAT-[0-9][0-9][0-9][0-9][0-9][0-9][0-9]&quot;, TAG+=&quot;systemd&quot;, RUN+=&quot;/bin/systemctl stop catalis-chmi@%k.service&quot;
+</code></pre>
+<p>The rules specify that inserting a valid USB &quot;key&quot; will trigger the <code>catalis-chmi@&lt;identifier&gt;.service</code>, where <code>&lt;identifier&gt;</code> corresponds to the <code>/dev/sdxx</code> device identifier of the key, and removing the key will stop the same service.</p>
 <h2 id='data-structures'>Data Structures</h2>
 <p>Data is structured in poll &quot;packets&quot;. A packet is a named, timestamped array of predefined register-value pairs. Packets are defined in <code>config/packet.conf</code> in the mount directory like so:</p>
 <pre><code>[report]
@@ -40,8 +90,22 @@ Addresses=2000,2001,2002
 <pre><code>ID   Timestamp    Type      Data
 9    1703613786   report    {&quot;2000&quot;:24, &quot;2001&quot;:998, &quot;2005&quot;:0}
 </code></pre>
+<h2 id='network-configuration'>Network Configuration</h2>
+<p>A static IP for the primary wired network interface is necessary to allow communication with the HMI (must be on the same subnet). The following network configuration file is provided in the project directory:</p>
+<pre><code># interfaces(5) file used by ifup(8) and ifdown(8)
+
+allow-hotplug eth0
+iface eth0 inet static
+	address 192.168.1.1
+	netmask 255.255.255.0
+
+auto wlan0
+allow-hotplug wlan0
+iface wlan0 inet dhcp
+	wpa-conf /srv/CatalisDATA/config/wireless.conf
+</code></pre>
+<p>The wired interface (<code>eth0</code>) has been assigned a static IP of <code>192.168.1.1</code> here, for an HMI at <code>192.168.1.x</code>  For wireless network configuration, see the wireless connectivity daemon.</p>
 <h2 id='service-ecosystem'>Service Ecosystem</h2>
-<p><em>NOTE: a grasp of the Linux operating system is extremely beneficial (ie. essential) to understanding the service ecosystem and much of what follows - in the case of a lack of such, consider skipping ahead to the section on daemons.</em></p>
 <p><img src="images/services.svg" referrerpolicy="no-referrer" alt="Service Ecosystem"></p>
 <p>Services run on the Systemd service manager framework, and are defined as Systemd units (located in <code>/etc/systemd/system/</code>). The general dependency + calling relationship diagram above visually describes the Catalis CHMI service ecosystem. The legend for components is as follows:</p>
 <ul>
@@ -59,7 +123,7 @@ Addresses=2000,2001,2002
 <li><strong>Dotted red line:</strong> [pointed by] is bound to [points to], ie. [pointed by] terminates if [points to] is terminated</li>
 
 </ul>
-<h2 id='service-specifics'>Service Specifics</h2>
+<h2 id='service-and-daemon-specifics'>Service and Daemon Specifics</h2>
 <p>All scripts executed by services are located in <code>/usr/sbin/</code>. As a general rules, plain scripts are written in bash, and daemons in Python.</p>
 <h3 id='catalis-chmi-main-service---catalis-chmiservice'>Catalis CHMI (Main Service) - <code>catalis-chmi@.service</code></h3>
 <p>The primary service of the ecosystem. Started upon insertion of the key, and stopped upon removal. Most services in the ecosystem bind to this service (ie. stopping this service propagates to most child services). Requires the main initialization service to successfully run before it runs itself. Executes <code>catalis-chmi</code> to spawn the polling and cloud sync daemons.</p>
@@ -67,6 +131,7 @@ Addresses=2000,2001,2002
 <p>Runs once at startup before the primary service, and stays alive until the primary service is stopped. Executes <code>catalis-init</code> at startup to start the LED status indicator service.</p>
 <h3 id='led-indicator-service---catalis-ledservice'>LED Indicator Service - <code>catalis-led@.service</code></h3>
 <p>Called by the main initialization service, spawns a daemon that asynchronously scans various groups of system statuses (service status, network connectivity, etc.) and controls corresponding physical indicator lights via GPIO. </p>
+<h4 id='network-status'>Network Status</h4>
 <p>All services are assigned green and red LED indicators, corresponding to active and failed states respectively. Network connectivity is indicated like so:</p>
 <ul>
 <li><strong>Green:</strong> connected to network, has internet access</li>
@@ -82,7 +147,8 @@ CATALIS_POLLING_FREQUENCY=&quot;1&quot;
 CATALIS_POLL_RETRY_INTERVAL=&quot;10&quot;
 </code></pre>
 <p>Loss of connectivity with the HMI (faulty ethernet connection, etc.) is a blocking, but non-fatal error. Inability to write to the database is a fatal error, indicative of either mangled file system permissions (Read Only) or database deletion.</p>
-<p>The polling daemon manages its own physical loss-of-connection warning indicator - a yellow LED in the polling service status indicator LED cluster.  </p>
+<p>The polling daemon manages its own physical loss-of-connection warning indicator - a yellow LED in the polling service status indicator LED cluster. </p>
+<p>Packets are polled pseudo-asynchronously, by running a loop at a (high) base polling frequency, and checking if the difference between the current time and the last polled time of each packet defined in <code>config/packet.conf</code> in the mount directory is greater than the <code>frequency</code> assigned to each packet.</p>
 <h3 id='cloud-sync-service---catalis-csyncservice'>Cloud Sync Service - <code>catalis-csync@.service</code></h3>
 <p>Called by the primary service, requires the database initialization service and the wireless connectivity service to run before it runs itself.</p>
 <p>Spawns a daemon that fetches the latest data from the poll data database on the USB key in batches and uploads these &quot;bundles&quot; to a cloud database via POST request to an API endpoint defined in the cloud sync configuration file (located at <code>config/csync.conf</code> in the mount directory):</p>
@@ -106,29 +172,15 @@ CATALIS_CSYNC_API_ENDPOINT=&quot;https://cloud.catalis.com/api/sync&quot;
 
 </ol>
 <h3 id='wireless-connectivity-service---catalis-wirelessservice'>Wireless Connectivity Service - <code>catalis-wireless@.service</code></h3>
-<p>Required by the cloud sync service, and requires the mount service. Runs as a one-off service, and facilitates connection to a WPA2-PSK wireless network by simply reloading the system network service once the key has been mounted to ensure the <code>wpa_supplicant</code> configuration file specified in <code>/etc/network/interfaces</code> has been loaded:</p>
-<pre><code># interfaces(5) file used by ifup(8) and ifdown(8)
-
-allow-hotplug eth0
-iface eth0 inet static
-	address 192.168.1.1
-	netmask 255.255.255.0
-
-auto wlan0
-allow-hotplug wlan0
-iface wlan0 inet dhcp
-	wpa-conf mount-directory-path/config/wireless.conf
-</code></pre>
-<p>The contents of <code>wireless.conf</code> in the mount directory being the following:</p>
+<p>Required by the cloud sync service, and requires the mount service. Runs as a one-off service, and facilitates connection to a WPA2-PSK wireless network by simply reloading the system network service once the key has been mounted to ensure the <code>wpa_supplicant</code> configuration file specified in <code>/etc/network/interfaces</code> has been loaded. The contents of <code>wireless.conf</code> in the mount directory being the following:</p>
 <pre><code>network={
         ssid=&quot;ssid-name&quot;
         psk=&quot;wpa-key&quot;
 }
 </code></pre>
+<p>Note that the successful running of this service does not guarantee that the Raspberry Pi is connected to a network - only that it has tried, as instructed by <code>wireless.conf</code>. An incorrect configuration file may require re-inserting the key with a correct configuration file. Any other connection errors are likely externally caused.</p>
 <h3 id='mount-service---catalis-mountservice'>Mount Service - <code>catalis-mount@.service</code></h3>
 <p>Required by the database initialization and wireless connectivity services. Runs once and stays alive until the primary service is stopped, at which time it performs a cleanup function. Executes <code>catalis-mount</code> at startup, which creates the mountpoint (<code>/srv/CatalisDATA/</code>), and mounts the key at the mountpoint.</p>
 <p>When the service is stopped by propagation from the primary service, the service executes <code>catalis-unmount</code> to unmount the mountpoint from the root filesystem and delete the mountpoint.  </p>
-<h2 id='python-configuration'>Python Configuration</h2>
-<p>Python modules are installed system-wide with <code>pip</code> and the <code>--break-system-packages</code> flag (externally managed environment). A symbolic link to the latest binary of python needs to be created at <code>/bin/python</code>.</p>
 </body>
 </html>
