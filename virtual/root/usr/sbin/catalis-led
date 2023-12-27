@@ -32,7 +32,7 @@ def service_scan(service_map:list, exit_event:Event) -> None:
 			if service["service"].status() == "failed":	service["leds"]["red"].on()
 			elif service["service"].status() in ["active", "activating"]: service["leds"]["green"].on()
 
-		sleep(5)
+		sleep(2)
 
 
 # network scanner
@@ -50,7 +50,7 @@ def network_scan(network_leds:dict, exit_event:Event) -> None:
 		elif network: network_leds["yellow"].on()
 		else: network_leds["red"].on()
 
-		sleep(25)
+		sleep(10)
 
 
 # daemon -----------------------------------------------------------------------
