@@ -78,20 +78,34 @@ if __name__ == "__main__":
 		groupstart = False
 		
 		while True:
+			pollcount = 0
+			group_data = tuple()
+
 			for packet in packet_defs:
 				if (pollstart := int(time())) - packet.lastpolled > packet.frequency:
+					pollcount += 1
+
 					# print visual separator at start of each pollign group
 					if not groupstart: 
 						logger.print("---------|")
 						groupstart = True
 
 					# poll for data
-					logger.log(f"(poll~g{groupcount:03}) <1/2>: Polling HMI for packet type: \"{packet.type}\"... ", endline=False)
+					logger.log(f"(poll~g{groupcount:03}.{pollcount}): Polling \"{packet.type}\" packet... ", endline=False)
 					
 					while True:			
 						try:
-							data = poll(hmi, addresses=packet.addresses)
-							logger.cap(f"read {len(data)} registers.")
+							# get timestamp of poll initiation
+							timestamp = strftime("%s", gmtime())
+
+							# poll for data
+							poll_data = poll(hmi, addresses=packet.addresses)
+							packet.lastpolled = pollstart
+							
+							logger.cap(f"read {len(poll_data)} reg.")
+
+							# add poll data to group data tuple
+							group_data += ((timestamp, packet.type, json.dumps(poll_data)), )
 
 							warning_light.off()
 							break
@@ -100,25 +114,23 @@ if __name__ == "__main__":
 							warning_light.on()
 
 							logger.cap("error.")
-							logger.log(f"No data received from link. Retrying in {POLL_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
+							logger.log(f"Link is down - retrying in {POLL_RETRY_INT}s... ", level=Logger.ERROR, endline=False)
 
 							sleep(int(POLL_RETRY_INT))
 
-					# write data to database
-					logger.log(f"(poll~g{groupcount:03}) <2/2>: Writing to database... ", endline=False)
-
-					try: 
-						timestamp = strftime("%s", gmtime())
-						db.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?);", (timestamp, packet.type, json.dumps(data)))
-						logger.cap("written.")
-						packet.lastpolled = pollstart
-
-					# on failure, throw fatal error...
-					except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
-						daemon._exit_fatal(cleanup)
-
-			# increment pollgroup count
+			# if ending a group...
 			if groupstart: 
+				logger.log(f"(poll~g{groupcount:03}): Writing to DB... ", endline=False)
+
+				# write all data to db
+				try: 
+					for data in group_data: db.execute("INSERT INTO packets (timestamp, type, data) VALUES (?,?,?)", data)
+					logger.cap("done.")
+
+				# on failure, throw fatal error...
+				except (apsw.ReadOnlyError, apsw.CantOpenError) as e:
+					daemon._exit_fatal(cleanup)
+
 				groupcount += 1
 				groupstart = False
 
