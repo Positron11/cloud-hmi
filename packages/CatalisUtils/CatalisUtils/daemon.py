@@ -45,14 +45,13 @@ class DBDaemon():
 		signal.signal(signal.SIGTERM, partial(self._exit_clean, self._cleanup))
 
 		# get filesystem label and generate database path
-		fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
-		hmid = fs_label.strip("CAT-")
+		hmid = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1").strip("CAT-")
 		dbpath = (f"/srv/CatalisDATA/database/{self.DB_PATTERN}.sqlite3").replace("$HMID", hmid)
 
 		# print logging preamble
 		self.logger.print(f"Catalis Cloud HMI {self._name} Daemon")
 		self.logger.print(f"> Session date: {strftime('%F', gmtime())} (GMT)")
-		self.logger.print(f"> CatKey label: {fs_label}")
+		self.logger.print(f"> Machine ID: {hmid}")
 		self.logger.print(f"> DB path: {dbpath}")
 
 		# preliminary operations
