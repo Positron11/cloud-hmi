@@ -4,7 +4,8 @@
 <meta charset='UTF-8'><meta name='viewport' content='width=device-width initial-scale=1'>
 <title>technical</title>
 <link rel="stylesheet" href="styles.css"></head>
-<body><h1 id='technical-documentation-for-the-catalis-cloudhmi-software-package'>Technical Documentation for the Catalis CloudHMI Software Package</h1>
+<body><p><a href='./index.html'>Main Page</a></p>
+<h1 id='technical-documentation-for-the-catalis-cloudhmi-software-package'>Technical Documentation for the Catalis CloudHMI Software Package</h1>
 <h2 id='overview'>Overview</h2>
 <p>The CloudHMI (CHMI) software is a suite of Systemd services and daemons running on <a href='https://raspi.debian.net/tested-images/'>Debian 12</a> (Linux) for the Raspberry Pi, on a Raspberry Pi 4 (4 GB variant) gateway device. The primary aims of the system being:</p>
 <ul>
@@ -68,8 +69,14 @@ CATALIS_DB_BUSY_RETRY_INTERVAL=&quot;10&quot;
 </code></pre>
 <p>(Additional service-specific environment files are located in the <code>config/</code> directory of the default key mountpoint - see the section on the mounting service). The global configuration defines file system variables and variables accessed by the <code>CatalisUtils</code> python package. Service-specific environment files define variables that control the general operation of main services in terms of timing, API access, etc. (see service specifics).</p>
 <h2 id='work-flow'>Work Flow</h2>
-<p>The service suite is automatically activated upon the insertion of a USB external storage device (thumb drive), containing a partition with a <code>vfat</code> file system labeled <code>CAT-xxxxxxxx</code>, replacing each <code>x</code> with a single digit to create a seven-digit unique identification corresponding to the Catalis machine&#39;s serial code. The activation mechanism is defined in <code>/etd/udev/rules.d/catalis-mount.rules</code>, and is facilitated by the <code>udev</code> device manager. The rules specify that inserting a valid USB &quot;key&quot; will trigger the <code>catalis-chmi@&lt;identifier&gt;.service</code>, where <code>&lt;identifier&gt;</code> corresponds to the <code>/dev/sdxx</code> device identifier of the key, and removing the key will stop the same service.</p>
+<p>The service suite is automatically activated upon the insertion of a USB external storage device (thumb drive), containing a partition with a <code>vfat</code> file system labeled <code>CAT-xxxxxxxx</code>, replacing each <code>x</code> with a single digit to create a seven-digit unique identification corresponding to the Catalis machine&#39;s serial code.</p>
 <p>Essentially: the system is active as long as the key is inserted.</p>
+<h3 id='work-flow-activation'>Work Flow Activation</h3>
+<p>The activation mechanism is defined in <code>/etd/udev/rules.d/catalis-mount.rules</code>, and is facilitated by the <code>udev</code> device manager:</p>
+<pre><code>ACTION==&quot;add&quot;, KERNEL==&quot;sd*&quot;, ENV{ID_FS_LABEL}==&quot;CAT-[0-9][0-9][0-9][0-9][0-9][0-9][0-9]&quot;, TAG+=&quot;systemd&quot;, ENV{SYSTEMD_WANTS}=&quot;catalis-chmi@%k.service&quot;
+ACTION==&quot;remove&quot;, KERNEL==&quot;sd*&quot;, ENV{ID_FS_LABEL}==&quot;CAT-[0-9][0-9][0-9][0-9][0-9][0-9][0-9]&quot;, TAG+=&quot;systemd&quot;, RUN+=&quot;/bin/systemctl stop catalis-chmi@%k.service&quot;
+</code></pre>
+<p>The rules specify that inserting a valid USB &quot;key&quot; will trigger the <code>catalis-chmi@&lt;identifier&gt;.service</code>, where <code>&lt;identifier&gt;</code> corresponds to the <code>/dev/sdxx</code> device identifier of the key, and removing the key will stop the same service.</p>
 <h2 id='data-structures'>Data Structures</h2>
 <p>Data is structured in poll &quot;packets&quot;. A packet is a named, timestamped array of predefined register-value pairs. Packets are defined in <code>config/packet.conf</code> in the mount directory like so:</p>
 <pre><code>[report]
@@ -83,8 +90,22 @@ Addresses=2000,2001,2002
 <pre><code>ID   Timestamp    Type      Data
 9    1703613786   report    {&quot;2000&quot;:24, &quot;2001&quot;:998, &quot;2005&quot;:0}
 </code></pre>
+<h2 id='network-configuration'>Network Configuration</h2>
+<p>A static IP for the primary wired network interface is necessary to allow communication with the HMI (must be on the same subnet). The following network configuration file is provided in the project directory:</p>
+<pre><code># interfaces(5) file used by ifup(8) and ifdown(8)
+
+allow-hotplug eth0
+iface eth0 inet static
+	address 192.168.1.1
+	netmask 255.255.255.0
+
+auto wlan0
+allow-hotplug wlan0
+iface wlan0 inet dhcp
+	wpa-conf /srv/CatalisDATA/config/wireless.conf
+</code></pre>
+<p>The wired interface (<code>eth0</code>) has been assigned a static IP of <code>192.168.1.1</code> here, for an HMI at <code>192.168.1.x</code>  For wireless network configuration, see the wireless connectivity daemon.</p>
 <h2 id='service-ecosystem'>Service Ecosystem</h2>
-<p><em>NOTE: a grasp of the Linux operating system is extremely beneficial (ie. essential) to understanding the service ecosystem and much of what follows - in the case of a lack of such, consider skipping ahead to the section on daemons.</em></p>
 <p><img src="images/services.svg" referrerpolicy="no-referrer" alt="Service Ecosystem"></p>
 <p>Services run on the Systemd service manager framework, and are defined as Systemd units (located in <code>/etc/systemd/system/</code>). The general dependency + calling relationship diagram above visually describes the Catalis CHMI service ecosystem. The legend for components is as follows:</p>
 <ul>
@@ -151,25 +172,13 @@ CATALIS_CSYNC_API_ENDPOINT=&quot;https://cloud.catalis.com/api/sync&quot;
 
 </ol>
 <h3 id='wireless-connectivity-service---catalis-wirelessservice'>Wireless Connectivity Service - <code>catalis-wireless@.service</code></h3>
-<p>Required by the cloud sync service, and requires the mount service. Runs as a one-off service, and facilitates connection to a WPA2-PSK wireless network by simply reloading the system network service once the key has been mounted to ensure the <code>wpa_supplicant</code> configuration file specified in <code>/etc/network/interfaces</code> has been loaded:</p>
-<pre><code># interfaces(5) file used by ifup(8) and ifdown(8)
-
-allow-hotplug eth0
-iface eth0 inet static
-	address 192.168.1.1
-	netmask 255.255.255.0
-
-auto wlan0
-allow-hotplug wlan0
-iface wlan0 inet dhcp
-	wpa-conf mount-directory-path/config/wireless.conf
-</code></pre>
-<p>The contents of <code>wireless.conf</code> in the mount directory being the following:</p>
+<p>Required by the cloud sync service, and requires the mount service. Runs as a one-off service, and facilitates connection to a WPA2-PSK wireless network by simply reloading the system network service once the key has been mounted to ensure the <code>wpa_supplicant</code> configuration file specified in <code>/etc/network/interfaces</code> has been loaded. The contents of <code>wireless.conf</code> in the mount directory being the following:</p>
 <pre><code>network={
         ssid=&quot;ssid-name&quot;
         psk=&quot;wpa-key&quot;
 }
 </code></pre>
+<p>Note that the successful running of this service does not guarantee that the Raspberry Pi is connected to a network - only that it has tried, as instructed by <code>wireless.conf</code>. An incorrect configuration file may require re-inserting the key with a correct configuration file. Any other connection errors are likely externally caused.</p>
 <h3 id='mount-service---catalis-mountservice'>Mount Service - <code>catalis-mount@.service</code></h3>
 <p>Required by the database initialization and wireless connectivity services. Runs once and stays alive until the primary service is stopped, at which time it performs a cleanup function. Executes <code>catalis-mount</code> at startup, which creates the mountpoint (<code>/srv/CatalisDATA/</code>), and mounts the key at the mountpoint.</p>
 <p>When the service is stopped by propagation from the primary service, the service executes <code>catalis-unmount</code> to unmount the mountpoint from the root filesystem and delete the mountpoint.  </p>
