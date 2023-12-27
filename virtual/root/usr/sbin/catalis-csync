@@ -53,7 +53,7 @@ if __name__ == "__main__":
 
 		while True:
 			logger.print("---------|") # print visual separator
-			logger.log(f"(sync~{synccount:03}) <1/3> Fetching latest packets from database... ", endline=False)
+			logger.log(f"(sync~{synccount:03}) <1/3> Fetching latest packets from DB... ", endline=False)
 			
 			# read latest polls
 			lastsync = list(db.execute("SELECT value FROM meta WHERE type=?", ("lastsync", )))[0][0]
@@ -64,7 +64,7 @@ if __name__ == "__main__":
 							LIMIT ?;""", (lastsync, MAX_PAYLOAD)))
 
 			if data: # if any new polls...
-				logger.log(f"fetched {len(data)} entries, from {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')} upwards.")
+				logger.log(f"fetched {len(data)} entries ({datetime.utcfromtimestamp(int(lastsync)).strftime('%T')} onwards).")
 				logger.log(f"(sync~{synccount:03}) <2/3> POSTing data to cloud API... ", endline=False)
 
 				# bundle data for upload
@@ -79,7 +79,7 @@ if __name__ == "__main__":
 						response = requests.post(url=ENDPOINT, json=bundle, headers=headers)
 						
 						if 200 <= response.status_code <= 299: # sucessfully posted data
-							logger.log(f"uploaded to cloud.")
+							logger.log(f"status 200 (OK).")
 
 							warning_light.off()
 							break
@@ -87,7 +87,7 @@ if __name__ == "__main__":
 						else:
 							logger.cap(f"error ({response.status_code}).")
 							logger.log(f"HTTP error: {response.reason}", level=Logger.TRACE)
-							logger.log(f"Retrying POST request in {REQ_RETRY_INT}s... ", endline=False)
+							logger.log(f"Retrying request in {REQ_RETRY_INT}s... ", endline=False)
 
 					except requests.exceptions.MissingSchema as e: # fatally exit if invalid url
 						logger.cap("error.")
@@ -100,7 +100,7 @@ if __name__ == "__main__":
 					except requests.exceptions.ConnectionError as e:
 						if "NameResolutionError" in str(e): logger.cap("error (NameResolutionError).")
 						if "NewConnectionError" in str(e): logger.cap("error (NameResolutionError).")
-						logger.log(f"Failed to connect to API. Trying again in {REQ_RETRY_INT}s...", level=Logger.ERROR, endline=False)
+						logger.log(f"Failed connecting to API - retrying in {REQ_RETRY_INT}s...", level=Logger.ERROR, endline=False)
 
 					warning_light.on() # if not broken out of loop yet, turn on wraning light
 					sleep(int(REQ_RETRY_INT))
@@ -108,7 +108,7 @@ if __name__ == "__main__":
 				try: # set sync state to last entry's timestamp
 					logger.log(f"(sync~{synccount:03}) <3/3> Updating sync state... ", endline=False)
 					db.execute("UPDATE meta SET value=? WHERE type=?", (data[-1][0], "lastsync" ))
-					logger.log(f"latest sync timestamp: {datetime.utcfromtimestamp(int(lastsync)).strftime('%T')}.")
+					logger.log(f"last synced at: {datetime.utcfromtimestamp(int(data[-1][0])).strftime('%T')}.")
 				
 				# on failure, throw fatal error...
 				except (apsw.ReadOnlyError, apsw.CantOpenError) as e:

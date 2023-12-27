@@ -69,7 +69,7 @@ class CatalisDB():
 # sqlite db busy handler
 def busy_handler(logger:Logger, wait:int, priorcalls:int):
 	logger.cap("error.")
-	logger.log(f"Database is busy - trying again in {wait}s... ", level=Logger.ERROR, endline=False)
+	logger.log(f"Database busy - retrying in {wait}s... ", level=Logger.ERROR, endline=False)
 	
 	sleep(wait)
 	return True
