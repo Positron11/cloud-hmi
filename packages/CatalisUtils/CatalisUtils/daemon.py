@@ -23,7 +23,6 @@ apsw.bestpractice.apply((
 
 # daemon wrapper class
 class DBDaemon():
-	LABEL_PREFIX 	= os.environ.get("CATALIS_LABEL_PREFIX", 			"DATA-HMI")
 	DB_PATTERN 		= os.environ.get("CATALIS_DB_PATTERN", 				"polldata-hmi$HMID")
 	BUSY_RETRY_INT 	= os.environ.get("CATALIS_DB_BUSY_RETRY_INTERVAL", 	"10")
 
@@ -47,7 +46,7 @@ class DBDaemon():
 
 		# get filesystem label and generate database path
 		fs_label = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1")
-		hmid = fs_label.strip(self.LABEL_PREFIX)
+		hmid = fs_label.strip("CAT-")
 		dbpath = (f"/srv/CatalisDATA/database/{self.DB_PATTERN}.sqlite3").replace("$HMID", hmid)
 
 		# print logging preamble

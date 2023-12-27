@@ -17,7 +17,6 @@ apsw.bestpractice.apply((
 
 
 # initialize environment vars
-LABEL_PREFIX	= os.environ.get("CATALIS_LABEL_PREFIX",	"DATA-HMI")
 DB_PATTERN		= os.environ.get("CATALIS_DB_PATTERN", 		"polldata-hmi$HMID")
 
 
@@ -29,7 +28,7 @@ sh.run("echo '(db init) <1/5> Created parent directories'", shell=True)
 
 
 # initialize connection
-hmid = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1").strip(LABEL_PREFIX)
+hmid = sh.getoutput(f"lsblk -o label /dev/{sys.argv[1]} | tail -1").strip("CAT-")
 dbpath =  os.path.join(basepath, (f"{DB_PATTERN}.sqlite3").replace("$HMID", hmid))
 db = CatalisDB(dbpath)
 
